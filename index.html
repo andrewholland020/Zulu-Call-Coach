@@ -67,6 +67,8 @@ pre.tx{white-space:pre-wrap;font:14px/1.5 Geist,system-ui,sans-serif;max-height:
 .empty{color:var(--muted);text-align:center;padding:40px 12px}
 .form-row{display:grid;grid-template-columns:2fr 1fr 2fr auto;gap:8px;align-items:end}
 @media(max-width:700px){.form-row{grid-template-columns:1fr}}
+@media(max-width:560px){.addrow{grid-template-columns:1fr!important}}
+input[readonly]{opacity:.7}
 label{font-size:13px;font-weight:500;display:grid;gap:4px}
 @media(max-width:600px){table{font-size:13px}.stack thead{display:none}.stack tr{display:grid;padding-block:8px}.stack td{display:flow-root;border:0;padding:2px 0;padding-inline-start:7em;text-align:start}.stack td::before{content:attr(data-l);float:inline-start;width:6.5em;margin-inline-start:-7em;color:var(--muted)}.stack td:empty{display:none}}
 </style>
@@ -88,7 +90,7 @@ label{font-size:13px;font-weight:500;display:grid;gap:4px}
   <header>
     <div><h1>Call Coach</h1><div class="muted small" id="who"></div></div>
     <div class="bar">
-      <div class="bar tabs" id="tabs"><button data-t="calls" aria-pressed="true">Calls</button><button data-t="team" id="teamTab" hidden aria-pressed="false">Team access</button></div>
+      <div class="bar tabs" id="tabs"><button data-t="calls" aria-pressed="true">Calls</button><button data-t="add" aria-pressed="false">Add a call</button><button data-t="team" id="teamTab" hidden aria-pressed="false">Team access</button></div>
       <button id="logout">Sign out</button>
     </div>
   </header>
@@ -114,6 +116,27 @@ label{font-size:13px;font-weight:500;display:grid;gap:4px}
         <p class="small muted" id="listNote"></p>
       </div>
       <div class="card" id="detail"><div class="empty">Pick a call to see its review.</div></div>
+    </div>
+  </section>
+
+  <section id="addView" hidden>
+    <div class="card" style="max-width:760px">
+      <h2>Add a call</h2>
+      <p class="small muted" style="margin-top:0">Upload a call recording or paste a transcript. The AI reviews it in about a minute and it is saved with the other calls.</p>
+      <form id="addCall" style="display:grid;gap:12px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px" class="addrow">
+          <label>Agent<input id="acAgent" list="agentNames" placeholder="e.g. Chris Morgan" autocomplete="off"></label>
+          <label>Carrier (optional)<input id="acCarrier" placeholder="e.g. Turner Freight or MC 1234567" autocomplete="off"></label>
+        </div>
+        <div class="bar tabs" id="acMode"><button type="button" data-m="file" aria-pressed="true">Upload recording</button><button type="button" data-m="text" aria-pressed="false">Paste transcript</button></div>
+        <div id="acFileBox">
+          <label>Recording (mp3, wav or m4a, up to 24 MB)<input id="acFile" type="file" accept="audio/*,.mp3,.wav,.m4a"></label>
+          <p class="small muted" id="acFileInfo" style="margin:6px 0 0"></p>
+        </div>
+        <div id="acTextBox" hidden><label>Transcript<textarea id="acText" rows="12" placeholder="Agent: Hi, is this John?&#10;Carrier: Yeah, who's this?&#10;…" style="width:100%;font:15px/1.45 Geist,system-ui,sans-serif"></textarea></label></div>
+        <div class="bar"><button class="primary" type="submit" id="acGo">Review this call</button></div>
+        <p class="small" id="acMsg" style="margin:0"></p>
+      </form>
     </div>
   </section>
 
@@ -173,7 +196,8 @@ async function start(session){
 
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#tabs button').forEach(x=>x.setAttribute('aria-pressed',x===b));
-  $('callsView').hidden=b.dataset.t!=='calls';$('teamView').hidden=b.dataset.t!=='team';
+  $('callsView').hidden=b.dataset.t!=='calls';$('teamView').hidden=b.dataset.t!=='team';$('addView').hidden=b.dataset.t!=='add';
+  if(b.dataset.t==='add')prepAdd();
   if(b.dataset.t==='team')loadMembers()});
 
 async function loadSync(){
@@ -269,6 +293,45 @@ async function loadMembers(){
 $('members').addEventListener('click',async e=>{const b=e.target.closest('[data-del]');if(!b)return;
   if(b.dataset.confirm!=='1'){b.dataset.confirm='1';b.textContent='Click again to remove';return}
   const {error}=await sb.from('team_members').delete().eq('email',b.dataset.del);$('addMsg').textContent=error?error.message:'Removed.';loadMembers()});
+// ---- Add a call ----
+let acMode='file',acDur=null;
+function prepAdd(){
+  const isMgr=me?.role==='manager';
+  $('acAgent').value=isMgr?($('acAgent').value||''):(me?.agent_name||'');
+  $('acAgent').readOnly=!isMgr;
+}
+document.querySelectorAll('#acMode button').forEach(b=>b.onclick=()=>{acMode=b.dataset.m;
+  document.querySelectorAll('#acMode button').forEach(x=>x.setAttribute('aria-pressed',x===b));
+  $('acFileBox').hidden=acMode!=='file';$('acTextBox').hidden=acMode!=='text'});
+$('acFile').onchange=()=>{const f=$('acFile').files[0];acDur=null;if(!f){$('acFileInfo').textContent='';return}
+  $('acFileInfo').textContent=`${f.name} · ${(f.size/1048576).toFixed(1)} MB`;
+  if(f.size>24*1048576){$('acFileInfo').textContent+=' — too large (max 24 MB)';return}
+  try{const a=new Audio();a.preload='metadata';a.onloadedmetadata=()=>{if(isFinite(a.duration)){acDur=Math.round(a.duration);$('acFileInfo').textContent+=` · ${fmtDur(acDur)}`}URL.revokeObjectURL(a.src)};a.src=URL.createObjectURL(f)}catch{}};
+$('addCall').onsubmit=async e=>{e.preventDefault();
+  const msg=$('acMsg');msg.style.color='';
+  const agent=$('acAgent').value.trim(),fd=new FormData();
+  if(!agent){msg.style.color='var(--bad)';msg.textContent='Enter the agent who made this call.';return}
+  fd.append('agent',agent);fd.append('carrier',$('acCarrier').value.trim());
+  if(acMode==='file'){const f=$('acFile').files[0];if(!f){msg.style.color='var(--bad)';msg.textContent='Choose a recording first.';return}
+    if(f.size>24*1048576){msg.style.color='var(--bad)';msg.textContent='Recording is larger than 24 MB.';return}
+    fd.append('file',f,f.name);if(acDur)fd.append('duration',acDur)}
+  else{const t=$('acText').value.trim();if(t.length<80){msg.style.color='var(--bad)';msg.textContent='Paste a longer transcript.';return}fd.append('transcript',t)}
+  const go=$('acGo');go.disabled=true;go.textContent='Reviewing…';
+  msg.textContent=acMode==='file'?'Uploading and transcribing the recording, then reviewing it. This takes 30–90 seconds; keep this page open.':'Reviewing the call. This takes 20–60 seconds.';
+  try{
+    const {data:{session}}=await sb.auth.getSession();
+    const r=await fetch(SUPABASE_URL+'/functions/v1/analyze-call',{method:'POST',headers:{Authorization:'Bearer '+session.access_token,apikey:SUPABASE_KEY},body:fd});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok||!d.ok)throw new Error(d.error||('Request failed ('+r.status+')'));
+    msg.textContent='Done. Opening the review…';
+    $('addCall').reset();$('acFileInfo').textContent='';acDur=null;prepAdd();
+    selected=d.id;document.querySelector('#tabs button[data-t="calls"]').click();await load();
+    const c=calls.find(x=>x.id===d.id);if(c){showDetail(c,true);render()}
+    msg.textContent='';
+  }catch(err){msg.style.color='var(--bad)';msg.textContent=err.message||'Something went wrong. Try again.'}
+  finally{go.disabled=false;go.textContent='Review this call'}
+};
+
 $('addForm').onsubmit=async e=>{e.preventDefault();
   const row={email:$('mEmail').value.trim().toLowerCase(),role:$('mRole').value,agent_name:$('mAgent').value.trim()||null};
   if(row.role==='agent'&&!row.agent_name){$('addMsg').textContent='Agents need their RingCentral name so they see their own calls.';return}

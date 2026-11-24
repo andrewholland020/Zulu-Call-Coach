@@ -10,6 +10,7 @@ Every 5 minutes a Supabase Edge Function (`rc-sync`) pulls new recorded calls fr
 | --- | --- |
 | Database, schedule, sync function | Supabase project `Call-Coach` (`wapxbphxzdmfqnourkqs`) |
 | Sync function source | `supabase/functions/rc-sync/index.ts` |
+| Manual upload function | `supabase/functions/analyze-call/index.ts` (Add a call tab: upload a recording or paste a transcript) |
 | Dashboard | `index.html` (GitHub Pages) |
 
 ## One-time setup
