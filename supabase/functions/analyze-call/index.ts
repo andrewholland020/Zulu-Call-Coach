@@ -138,10 +138,15 @@ Deno.serve(async (req) => {
 
   try {
     let tModel = "pasted";
+    let audioPath: string | null = null;
     if (file instanceof File && file.size > 0) {
       if (file.size > 24 * 1024 * 1024) return json({ error: "Recording is larger than 24 MB. Upload a shorter call or an mp3." }, 413);
       const tx = await transcribe(file);
       transcript = tx.text; tModel = tx.model;
+      const ext = (file.name.split(".").pop() || "mp3").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 5) || "mp3";
+      const path = `uploads/${crypto.randomUUID()}.${ext}`;
+      const up = await admin.storage.from("recordings").upload(path, file, { contentType: file.type || "audio/mpeg" });
+      if (!up.error) audioPath = path;
     }
     if (transcript.length < 80) return json({ error: "The call is too short to review. Paste a longer transcript or a longer recording." }, 400);
 
@@ -155,6 +160,7 @@ Deno.serve(async (req) => {
       agent_name: agent,
       carrier_name: carrier || (r.carrierName ? String(r.carrierName).slice(0, 120) : null),
       status: "done",
+      audio_path: audioPath,
       transcript,
       result: { ...r, _models: { transcribe: tModel, analysis: an.model }, _addedBy: email },
       overall: Math.max(0, Math.min(100, Math.round(Number(r.overall) || 0))),

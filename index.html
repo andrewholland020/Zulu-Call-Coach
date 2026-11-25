@@ -69,6 +69,15 @@ pre.tx{white-space:pre-wrap;font:14px/1.5 Geist,system-ui,sans-serif;max-height:
 @media(max-width:700px){.form-row{grid-template-columns:1fr}}
 @media(max-width:560px){.addrow{grid-template-columns:1fr!important}}
 input[readonly]{opacity:.7}
+.notes{margin-top:10px;display:grid;gap:8px}
+.note-item{padding:9px 12px;border-radius:10px;background:var(--panel);border:1px solid var(--line)}
+.note-item.manager{border-left:3px solid var(--acc)}
+.note-body{white-space:pre-wrap;margin-top:2px}
+.noteform{display:grid;gap:8px;margin-top:10px}
+.noteform textarea{width:100%;font:15px/1.45 Geist,system-ui,sans-serif}
+.chk{display:flex;gap:6px;align-items:center;flex:1}
+.chk input{min-height:auto;width:18px;height:18px}
+button.b{font:600 15px Geist,system-ui,sans-serif;min-height:44px;padding:0 16px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
 label{font-size:13px;font-weight:500;display:grid;gap:4px}
 @media(max-width:600px){table{font-size:13px}.stack thead{display:none}.stack tr{display:grid;padding-block:8px}.stack td{display:flow-root;border:0;padding:2px 0;padding-inline-start:7em;text-align:start}.stack td::before{content:attr(data-l);float:inline-start;width:6.5em;margin-inline-start:-7em;color:var(--muted)}.stack td:empty{display:none}}
 </style>
@@ -95,6 +104,7 @@ label{font-size:13px;font-weight:500;display:grid;gap:4px}
     </div>
   </header>
   <div id="sync" class="status" hidden></div>
+  <div id="inbox" class="status" hidden style="border-color:var(--acc)"></div>
 
   <section id="callsView">
     <div class="bar" style="margin-bottom:12px">
@@ -167,7 +177,7 @@ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const col=v=>v>=7?'var(--good)':v>=4?'var(--mid)':'var(--bad)';
 const col100=v=>col(v/10);
 const WON=['Signed','Trial / first load booked'];
-let me=null,calls=[],selected=null,timer=null;
+let me=null,calls=[],selected=null,timer=null,notesBy={},onlyUnseen=false,shownStatus=null,audioEl=null;
 
 function fmtWhen(t){if(!t)return'';const d=new Date(t);return d.toLocaleDateString([], {month:'short',day:'numeric'})+' '+d.toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}
 function fmtDur(s){s=+s||0;return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')}
@@ -212,23 +222,29 @@ async function loadSync(){
 
 async function load(){
   const days=+$('fRange').value;const since=new Date(Date.now()-days*864e5);if(days===1)since.setHours(0,0,0,0);
-  const {data,error}=await sb.from('calls').select('id,started_at,duration_sec,direction,agent_name,carrier_number,carrier_name,status,error,overall,outcome,result').gte('started_at',since.toISOString()).order('started_at',{ascending:false}).limit(1000);
+  const {data,error}=await sb.from('calls').select('id,started_at,duration_sec,direction,agent_name,carrier_number,carrier_name,status,error,overall,outcome,result,audio_path,recording_uri').gte('started_at',since.toISOString()).order('started_at',{ascending:false}).limit(1000);
   if(error){$('listNote').textContent='Could not load calls: '+error.message;return}
   calls=data||[];
+  const nres=await sb.from('call_notes').select('call_id,author_role,seen_at').gte('created_at',since.toISOString()).limit(5000);
+  notesBy={};for(const n of nres.data||[]){const o=notesBy[n.call_id]=notesBy[n.call_id]||{count:0,unseen:0};o.count++;if(n.author_role!==me.role&&!n.seen_at)o.unseen++}
   const agents=[...new Set(calls.map(c=>c.agent_name).filter(Boolean))].sort();
   const curA=$('fAgent').value;$('fAgent').innerHTML='<option value="">All agents</option>'+agents.map(a=>`<option${a===curA?' selected':''}>${esc(a)}</option>`).join('');
   $('agentNames').innerHTML=agents.map(a=>`<option value="${esc(a)}">`).join('');
   const outs=[...new Set(calls.map(c=>c.outcome).filter(Boolean))].sort();
   const curO=$('fOutcome').value;$('fOutcome').innerHTML='<option value="">All outcomes</option>'+outs.map(o=>`<option${o===curO?' selected':''}>${esc(o)}</option>`).join('');
   render();loadSync();
-  if(selected){const c=calls.find(x=>x.id===selected);if(c)showDetail(c,false)}
+  if(selected){const c=calls.find(x=>x.id===selected);if(c&&c.status!==shownStatus)showDetail(c,false)}
 }
 
 function filtered(){
   const a=$('fAgent').value,o=$('fOutcome').value,q=$('fSearch').value.trim().toLowerCase();
-  return calls.filter(c=>(!a||c.agent_name===a)&&(!o||c.outcome===o)&&(!q||`${c.carrier_name||''} ${c.carrier_number||''}`.toLowerCase().includes(q)));
+  return calls.filter(c=>(!onlyUnseen||notesBy[c.id]?.unseen)&&(!a||c.agent_name===a)&&(!o||c.outcome===o)&&(!q||`${c.carrier_name||''} ${c.carrier_number||''}`.toLowerCase().includes(q)));
 }
 function render(){
+  const unseenCalls=calls.filter(c=>notesBy[c.id]?.unseen).length;
+  const ib=$('inbox');ib.hidden=!unseenCalls&&!onlyUnseen;
+  ib.innerHTML=onlyUnseen?`Showing only calls with new ${me.role==='manager'?'replies':'suggestions'}. <button class="link" id="ibBtn">Show all calls</button>`:`You have new ${me.role==='manager'?'agent replies':'suggestions from your manager'} on ${unseenCalls} call${unseenCalls>1?'s':''}. <button class="link" id="ibBtn">Show them</button>`;
+  if(!ib.hidden)$('ibBtn').onclick=()=>{onlyUnseen=!onlyUnseen;render()};
   const L=filtered(),done=L.filter(c=>c.status==='done'&&c.outcome!=='Not a sales call'&&c.outcome!=='Voicemail');
   const avg=done.length?Math.round(done.reduce((s,c)=>s+(c.overall||0),0)/done.length):0;
   const won=done.filter(c=>WON.includes(c.outcome)).length;
@@ -246,7 +262,7 @@ function render(){
   const show=L.slice(0,300);
   $('list').innerHTML=show.length?show.map(c=>{
     const score=c.status==='done'?`<span class="pill" style="color:${col100(c.overall||0)}">${c.overall??''}</span>`:`<span class="tag">${c.status==='queued'||c.status==='processing'?'Reviewing…':c.status==='skipped'?'Skipped':'Failed'}</span>`;
-    return `<tr class="click${c.id===selected?' sel':''}" data-id="${esc(c.id)}" tabindex="0"><td>${esc(fmtWhen(c.started_at))}<div class="small muted">${esc(fmtDur(c.duration_sec))} · ${esc(c.direction||'')}</div></td><td>${esc(c.agent_name)}</td><td>${esc(c.carrier_name||c.carrier_number||'—')}</td><td>${esc(c.outcome||'')}</td><td class="n">${score}</td></tr>`}).join(''):'<tr><td colspan="5" class="muted">No recorded calls in this period. New RingCentral calls appear within about 10 minutes.</td></tr>';
+    return `<tr class="click${c.id===selected?' sel':''}" data-id="${esc(c.id)}" tabindex="0"><td>${esc(fmtWhen(c.started_at))}<div class="small muted">${esc(fmtDur(c.duration_sec))} · ${esc(c.direction||'')}</div></td><td>${esc(c.agent_name)}</td><td>${esc(c.carrier_name||c.carrier_number||'—')}${notesBy[c.id]?` <span class="tag" style="${notesBy[c.id].unseen?'background:var(--acc);color:#fff;border-color:var(--acc)':''}">${notesBy[c.id].count} note${notesBy[c.id].count>1?'s':''}${notesBy[c.id].unseen?' · new':''}</span>`:''}</td><td>${esc(c.outcome||'')}</td><td class="n">${score}</td></tr>`}).join(''):'<tr><td colspan="5" class="muted">No recorded calls in this period. New RingCentral calls appear within about 10 minutes.</td></tr>';
   $('listNote').textContent=L.length>300?`Showing the latest 300 of ${L.length} calls. Narrow the filters to see more.`:'';
 }
 ['fAgent','fOutcome'].forEach(id=>$(id).onchange=render);$('fSearch').oninput=render;
@@ -258,11 +274,11 @@ function dial(v){const a=Math.max(0,Math.min(100,+v||0)),R=64,C=2*Math.PI*R,L=C*
   return `<svg width="160" height="160" viewBox="0 0 160 160" role="img" aria-label="Score ${a} of 100"><g transform="rotate(135 80 80)"><circle cx="80" cy="80" r="${R}" fill="none" stroke="var(--bg)" stroke-width="13" stroke-dasharray="${L} ${C}" stroke-linecap="round"/><circle cx="80" cy="80" r="${R}" fill="none" stroke="${col100(a)}" stroke-width="13" stroke-dasharray="${f} ${C}" stroke-linecap="round"/></g><text x="80" y="88" text-anchor="middle" font-size="40" font-weight="700" fill="var(--ink)" font-family="Geist,system-ui">${a}</text><text x="80" y="112" text-anchor="middle" font-size="12" fill="var(--muted)" font-family="Geist,system-ui">out of 100</text></svg>`}
 
 async function showDetail(c,scroll){
-  selected=c.id;const d=$('detail');
+  selected=c.id;shownStatus=c.status;audioEl=null;const d=$('detail');
   const head=`<h2 style="margin-bottom:4px">${esc(c.agent_name)} → ${esc(c.carrier_name||c.carrier_number||'Unknown carrier')}</h2><div class="small muted" style="margin-bottom:12px">${esc(fmtWhen(c.started_at))} · ${esc(fmtDur(c.duration_sec))} · ${esc(c.direction||'')}${c.carrier_number?' · '+esc(c.carrier_number):''}</div>`;
   if(c.status!=='done'){
     const retry=me?.role==='manager'&&(c.status==='error'||c.status==='skipped')?'<button id="retry" class="primary">Review this call again</button>':'';
-    d.innerHTML=head+`<p>${c.status==='queued'||c.status==='processing'?'This call is waiting to be transcribed and reviewed. It usually takes a few minutes.':esc(c.error||'This call was not reviewed.')}</p>${retry}`;
+    d.innerHTML=head+`<p>${c.status==='queued'||c.status==='processing'?'This call is waiting to be transcribed and reviewed. It usually takes a few minutes.':esc(c.error||'This call was not reviewed.')}</p>${retry}${coachBlock(c)}`;wireCoach(c);
     if(retry)$('retry').onclick=async()=>{const {error}=await sb.from('calls').update({status:'queued',attempts:0,error:null}).eq('id',c.id);if(error)alertBox(error.message);else load()};
     if(scroll&&innerWidth<900)d.scrollIntoView({behavior:'smooth'});return}
   const r=c.result||{};
@@ -272,16 +288,76 @@ async function showDetail(c,scroll){
   const li=a=>(a||[]).map(x=>`<li>${esc(x)}</li>`).join('');
   const talk=Math.max(0,Math.min(100,+r.agentTalkPercent||0));
   d.innerHTML=head+`<div class="dialwrap">${dial(c.overall)}<div><span class="tag" style="margin-bottom:6px">${esc(c.outcome)}</span><p style="margin:6px 0">${esc(r.summary)}</p><div class="small muted">Agent talked <b style="color:${talk>60?'var(--bad)':'var(--good)'}">${talk}%</b> of the call (target: under 40%)</div></div></div>
+  ${coachBlock(c)}
   <div class="meters">${st}</div>
   ${mi?`<div class="sec"><h3>Where the sale was lost</h3>${mi}</div>`:''}${ob}
   <div class="sec two"><div><h3>Done well</h3>${(r.strengths||[]).length?`<ul>${li(r.strengths)}</ul>`:'<p class="small muted">Nothing stood out.</p>'}</div><div><h3>Missed chances</h3><ul>${li(r.missed)}</ul></div></div>
   ${r.drill?`<div class="sec card" style="background:var(--bg)"><h3>Practice before tomorrow</h3><p style="margin:0">${esc(r.drill)}</p></div>`:''}
   <details class="sec" id="txBox"><summary>Show transcript</summary><pre class="tx" id="tx">Loading…</pre></details>
   <div class="bar sec"><button id="copy">Copy coaching notes</button></div>`;
+  wireCoach(c);
   $('txBox').ontoggle=async()=>{if(!$('txBox').open||$('tx').dataset.done)return;const {data}=await sb.from('calls').select('transcript').eq('id',c.id).single();$('tx').textContent=data?.transcript||'No transcript saved.';$('tx').dataset.done=1};
   $('copy').onclick=async()=>{const t=`Call review: ${c.agent_name} → ${c.carrier_name||c.carrier_number||''} (${fmtWhen(c.started_at)}) — ${c.overall}/100, ${c.outcome}\n${r.summary||''}\n\nFix these:\n${(r.mistakes||[]).map((m,i)=>`${i+1}. You said: "${m.quote}"\n   Problem: ${m.problem}\n   Say instead: "${m.better}"`).join('\n')}\n\nPractice: ${r.drill||''}`;
     try{await navigator.clipboard.writeText(t);$('copy').textContent='Copied'}catch{$('copy').textContent='Copy failed'}};
   if(scroll&&innerWidth<900)d.scrollIntoView({behavior:'smooth'});
+}
+// ---- Listen & coach ----
+function coachBlock(c){
+  const hasAudio=!!(c.audio_path||c.recording_uri),mgr=me?.role==='manager';
+  return `<div class="sec card coach" style="background:var(--bg)">
+    <h3>${mgr?'Listen and coach':'Recording and coaching'}</h3>
+    ${hasAudio?`<div id="audioBox"><button class="b" id="loadAudio">Play recording</button></div>`:'<p class="small muted" style="margin:0 0 8px">No recording for this call (it was added as a transcript).</p>'}
+    <div id="notes" class="notes"><p class="small muted">Loading notes…</p></div>
+    <form id="noteForm" class="noteform">
+      <textarea id="noteText" rows="3" maxlength="4000" placeholder="${mgr?'Suggestion for the agent, e.g. “At this point ask his rate per mile before pitching.”':'Reply to your manager'}"></textarea>
+      <div class="bar">${hasAudio?'<label class="small chk"><input type="checkbox" id="noteAt" disabled> Link to <span id="noteAtTime">current time</span> in the recording</label>':''}
+      <button class="primary" type="submit" id="noteSend">${mgr?'Send suggestion':'Send reply'}</button></div>
+      <p class="small" id="noteMsg" style="margin:0"></p>
+    </form></div>`;
+}
+function safePlay(){try{const p=audioEl&&audioEl.play();if(p&&p.catch)p.catch(()=>{})}catch{}}
+function fmtSec(s){s=Math.max(0,Math.round(+s||0));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')}
+async function loadNotes(c){
+  const box=$('notes');if(!box)return;
+  const {data,error}=await sb.from('call_notes').select('*').eq('call_id',c.id).order('created_at');
+  if(selected!==c.id||!$('notes'))return;
+  if(error){box.innerHTML=`<p class="small" style="color:var(--bad)">${esc(error.message)}</p>`;return}
+  const myEmail=(await sb.auth.getUser()).data.user?.email?.toLowerCase();
+  box.innerHTML=(data||[]).length?data.map(n=>`<div class="note-item ${n.author_role}"><div class="small muted"><b>${n.author_role==='manager'?'Manager':'Agent'}</b> · ${esc(fmtWhen(n.created_at))}${n.at_sec!=null?` · <button class="link seek" data-s="${n.at_sec}">at ${fmtSec(n.at_sec)}</button>`:''}${n.author_role!==me.role&&!n.seen_at?' · <b style="color:var(--acc)">new</b>':''}${(n.author_email.toLowerCase()===myEmail||me.role==='manager')?` <button class="link del" data-id="${esc(n.id)}">Delete</button>`:''}</div><div class="note-body"></div></div>`).join(''):`<p class="small muted" style="margin:6px 0">${me.role==='manager'?'No suggestions yet. Listen to the call and add one below.':'No suggestions from your manager yet.'}</p>`;
+  (data||[]).forEach((n,i)=>{box.querySelectorAll('.note-body')[i].textContent=n.body});
+  box.querySelectorAll('.seek').forEach(b=>b.onclick=async()=>{if(!audioEl)await loadAudio(c);if(audioEl){audioEl.currentTime=+b.dataset.s;safePlay()}});
+  box.querySelectorAll('.del').forEach(b=>b.onclick=async()=>{if(b.dataset.c!=='1'){b.dataset.c='1';b.textContent='Click again to delete';return}
+    await sb.from('call_notes').delete().eq('id',b.dataset.id);loadNotes(c);load()});
+  const unseen=(data||[]).filter(n=>n.author_role!==me.role&&!n.seen_at).map(n=>n.id);
+  if(unseen.length){await sb.from('call_notes').update({seen_at:new Date().toISOString()}).in('id',unseen);
+    if(notesBy[c.id]){notesBy[c.id].unseen=0;render()}}
+}
+async function loadAudio(c){
+  const box=$('audioBox');if(!box)return;
+  box.innerHTML='<p class="small muted" style="margin:0">Loading recording…</p>';
+  try{
+    const {data:{session}}=await sb.auth.getSession();
+    const r=await fetch(SUPABASE_URL+'/functions/v1/call-audio?id='+encodeURIComponent(c.id),{headers:{Authorization:'Bearer '+session.access_token,apikey:SUPABASE_KEY}});
+    if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.error||'Could not load the recording ('+r.status+')')}
+    const blob=await r.blob();if(selected!==c.id)return;
+    box.innerHTML='';audioEl=document.createElement('audio');audioEl.controls=true;audioEl.style.width='100%';audioEl.src=URL.createObjectURL(blob);box.appendChild(audioEl);
+    const at=$('noteAt');if(at){at.disabled=false;audioEl.ontimeupdate=()=>{$('noteAtTime').textContent=fmtSec(audioEl.currentTime)}}
+  }catch(e){box.innerHTML=`<p class="small" style="color:var(--bad);margin:0"></p>`;box.firstChild.textContent=e.message;audioEl=null}
+}
+function wireCoach(c){
+  const la=$('loadAudio');if(la)la.onclick=async()=>{await loadAudio(c);safePlay()};
+  $('noteForm').onsubmit=async e=>{e.preventDefault();
+    const body=$('noteText').value.trim(),msg=$('noteMsg');msg.style.color='';
+    if(!body){msg.style.color='var(--bad)';msg.textContent='Write a note first.';return}
+    const at=$('noteAt')?.checked&&audioEl?Math.round(audioEl.currentTime):null;
+    const email=(await sb.auth.getUser()).data.user?.email;
+    $('noteSend').disabled=true;
+    const {error}=await sb.from('call_notes').insert({call_id:c.id,author_email:email,author_role:me.role,body,at_sec:at});
+    $('noteSend').disabled=false;
+    if(error){msg.style.color='var(--bad)';msg.textContent=error.message;return}
+    $('noteText').value='';if($('noteAt'))$('noteAt').checked=false;msg.textContent=me.role==='manager'?'Sent. The agent will see it on their dashboard.':'Reply sent.';
+    notesBy[c.id]=notesBy[c.id]||{count:0,unseen:0};notesBy[c.id].count++;render();loadNotes(c)};
+  loadNotes(c);
 }
 function alertBox(m){$('sync').hidden=false;$('sync').className='status err';$('sync').textContent=m}
 
