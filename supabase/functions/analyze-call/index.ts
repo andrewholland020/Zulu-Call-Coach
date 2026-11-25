@@ -190,17 +190,27 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "Use POST" }, 405);
 
-  // who is calling?
-  const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
-  const { data: u } = await admin.auth.getUser(token);
-  const email = u?.user?.email?.toLowerCase();
-  if (!email) return json({ error: "Please sign in again." }, 401);
-  const { data: member } = await admin.from("team_members").select("*").ilike("email", email).maybeSingle();
-  if (!member) return json({ error: "You do not have access to Call Coach yet. Ask your manager to add you." }, 403);
+  // who is calling? (the scheduler's secret allows a dry-run health check that saves nothing)
+  const secret = req.headers.get("x-sync-secret") ?? "";
+  const dryRun = secret ? !!(await admin.rpc("check_sync_secret", { s: secret })).data : false;
+  let email = "health-check", member: { role: string; agent_name?: string } | null = { role: "manager" };
+  if (!dryRun) {
+    const token = (req.headers.get("Authorization") ?? "").replace(/^Bearer\s+/i, "");
+    const { data: u } = await admin.auth.getUser(token);
+    email = u?.user?.email?.toLowerCase() ?? "";
+    if (!email) return json({ error: "Please sign in again." }, 401);
+    member = (await admin.from("team_members").select("*").ilike("email", email).maybeSingle()).data;
+    if (!member) return json({ error: "You do not have access to Call Coach yet. Ask your manager to add you." }, 403);
+  }
   if (!ANY_KEY()) return json({ error: "AI is not set up yet: add GEMINI_API_KEY (free) in Supabase Edge Function secrets." }, 503);
 
   let form: FormData;
-  try { form = await req.formData(); } catch { return json({ error: "Could not read the upload." }, 400); }
+  try {
+    if ((req.headers.get("content-type") ?? "").includes("application/json")) {
+      const body = await req.json(); form = new FormData();
+      for (const k of ["transcript", "agent", "carrier"]) if (body[k]) form.append(k, String(body[k]));
+    } else form = await req.formData();
+  } catch { return json({ error: "Could not read the upload." }, 400); }
   const file = form.get("file");
   let transcript = String(form.get("transcript") ?? "").trim();
   const carrier = String(form.get("carrier") ?? "").trim().slice(0, 120) || null;
@@ -225,6 +235,7 @@ Deno.serve(async (req) => {
       if (transcript.length < 80) return json({ error: "The call is too short to review. Paste a longer transcript or a longer recording." }, 400);
       an = await analyze(agent, transcript);
     }
+    if (dryRun) return json({ ok: true, dryRun: true, model: an.model, overall: an.result.overall, outcome: an.result.outcome, summary: an.result.summary });
     if (audio) {
       const ext = (audio.name.split(".").pop() || "mp3").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 5) || "mp3";
       const path = `uploads/${crypto.randomUUID()}.${ext}`;

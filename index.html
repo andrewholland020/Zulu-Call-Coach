@@ -226,7 +226,9 @@ async function loadSync(){
   if(me?.role!=='manager')return;
   const {data}=await sb.from('sync_state').select('*');
   const m=Object.fromEntries((data||[]).map(r=>[r.key,r.value]));
-  const s=$('sync');s.hidden=false;
+  const s=$('sync');
+  if(m.rc_paused==='1'){s.hidden=true;return}
+  s.hidden=false;
   const counts={queued:0,processing:0,error:0};for(const c of calls)if(c.status in counts)counts[c.status]++;
   if(m.last_error){s.className='status err';s.textContent='Sync problem: '+m.last_error}
   else{s.className='status';s.textContent=`RingCentral sync: ${m.last_run?'last run '+fmtWhen(m.last_run):'not run yet'} · ${counts.queued+counts.processing} waiting for review · ${counts.error} failed`}
