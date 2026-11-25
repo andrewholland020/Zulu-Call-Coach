@@ -69,6 +69,26 @@ pre.tx{white-space:pre-wrap;font:14px/1.5 Geist,system-ui,sans-serif;max-height:
 @media(max-width:700px){.form-row{grid-template-columns:1fr}}
 @media(max-width:560px){.addrow{grid-template-columns:1fr!important}}
 input[readonly]{opacity:.7}
+.live{display:grid;grid-template-columns:minmax(0,5fr) minmax(0,6fr);gap:14px;align-items:start}
+.live>div{display:grid;gap:14px}
+@media(max-width:900px){.live{grid-template-columns:minmax(0,1fr)}}
+.tipcard{border:2px solid var(--acc)}
+.tip{font-size:clamp(20px,2.4vw,26px);line-height:1.3;font-weight:700;margin:6px 0;color:var(--ink)}
+.tipcard.flash{animation:fl 1.2s ease}
+@keyframes fl{0%{background:var(--accs)}100%{background:var(--panel)}}
+.meters2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+.lvl{height:8px;background:var(--bg);border-radius:4px;overflow:hidden;border:1px solid var(--line);margin-top:4px}
+.lvl i{display:block;height:100%;width:0;background:var(--good);transition:width .15s}
+.lvstep{display:grid;grid-template-columns:22px minmax(0,1fr);gap:8px;padding:7px 0;border-bottom:1px solid var(--line);cursor:pointer}
+.lvstep input{min-height:auto;width:18px;height:18px;margin-top:3px}
+.lvstep span span{display:block}
+.lvstep.on b{color:var(--good)}
+.lvtx{display:flex;flex-direction:column;gap:8px;max-height:560px;overflow-y:auto}
+.lvtx .msg{max-width:86%;padding:8px 12px;border-radius:14px;font-size:15px}
+.lvtx .msg small{display:block;font-size:11px;opacity:.65;font-weight:600}
+.lvtx .msg.a{align-self:flex-end;background:var(--ink);color:var(--panel)}
+.lvtx .msg.c{align-self:flex-start;background:var(--bg);border:1px solid var(--line)}
+@media(prefers-reduced-motion:reduce){.tipcard.flash{animation:none}}
 .profile{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}
 @media(max-width:820px){.profile{grid-template-columns:minmax(0,1fr)}}
 .phead{display:flex;gap:14px;align-items:center;margin-bottom:14px}
@@ -113,7 +133,7 @@ label{font-size:13px;font-weight:500;display:grid;gap:4px}
   <header>
     <div><h1>Call Coach</h1><div class="muted small" id="who"></div></div>
     <div class="bar">
-      <div class="bar tabs" id="tabs"><button data-t="calls" aria-pressed="true">Calls</button><button data-t="add" aria-pressed="false">Add a call</button><button data-t="profile" aria-pressed="false">Profile</button><button data-t="team" id="teamTab" hidden aria-pressed="false">Team access</button></div>
+      <div class="bar tabs" id="tabs"><button data-t="calls" aria-pressed="true">Calls</button><button data-t="live" aria-pressed="false">Live Coach</button><button data-t="add" aria-pressed="false">Add a call</button><button data-t="profile" aria-pressed="false">Profile</button><button data-t="team" id="teamTab" hidden aria-pressed="false">Team access</button></div>
       <button id="logout">Sign out</button>
     </div>
   </header>
@@ -161,6 +181,50 @@ label{font-size:13px;font-weight:500;display:grid;gap:4px}
         <div class="bar"><button class="primary" type="submit" id="acGo">Review this call</button></div>
         <p class="small" id="acMsg" style="margin:0"></p>
       </form>
+    </div>
+  </section>
+
+  <section id="liveView" hidden>
+    <div class="live">
+      <div>
+        <div class="card" id="liveSetup">
+          <h2>Live Coach <span class="tag">test version</span></h2>
+          <ol class="small" style="margin:0 0 12px;padding-left:18px">
+            <li>Put on your headset and open the app you call from.</li>
+            <li>Click <b>Start Live Coach</b> and allow the microphone.</li>
+            <li>In the share box choose <b>Entire screen</b>, switch on <b>Also share system audio</b>, then click <b>Share</b>. This lets the coach hear the driver.</li>
+            <li>Tell the driver early in the call that it may be recorded.</li>
+          </ol>
+          <div class="addrow" style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <label>Driver / carrier (optional)<input id="lvCarrier" placeholder="e.g. Mike, Turner Freight"></label>
+            <label>What you know (optional)<input id="lvAbout" placeholder="e.g. reefer, 2 trucks, new MC"></label>
+          </div>
+          <div class="bar" style="margin-top:12px"><button class="primary" id="lvStart">Start Live Coach</button><button id="lvStop" hidden>End call</button></div>
+          <div class="meters2" id="lvMeters" hidden>
+            <div><span class="small">You</span><div class="lvl"><i id="lvMe"></i></div></div>
+            <div><span class="small">Driver</span><div class="lvl"><i id="lvDrv"></i></div></div>
+          </div>
+          <p class="small" id="lvMsg" style="margin:8px 0 0"></p>
+        </div>
+        <div class="card tipcard" id="lvTipCard">
+          <span class="small muted">Say next</span>
+          <p id="lvTip" class="tip">Start a call to get live suggestions here.</p>
+          <span class="small muted" id="lvTipAge"></span>
+        </div>
+        <div class="card">
+          <h3>Call steps</h3>
+          <div id="lvSteps"></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Live transcript</h3>
+        <div id="lvTx" class="lvtx"><p class="small muted">The conversation will appear here, about 10 seconds behind.</p></div>
+        <div id="lvEnd" hidden class="sec">
+          <p class="small" id="lvSummary"></p>
+          <div class="bar"><button class="primary" id="lvReview">Get full review of this call</button></div>
+          <p class="small" id="lvReviewMsg" style="margin:6px 0 0"></p>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -261,7 +325,7 @@ async function start(session){
 
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#tabs button').forEach(x=>x.setAttribute('aria-pressed',x===b));
-  $('callsView').hidden=b.dataset.t!=='calls';$('teamView').hidden=b.dataset.t!=='team';$('addView').hidden=b.dataset.t!=='add';$('profileView').hidden=b.dataset.t!=='profile';
+  $('callsView').hidden=b.dataset.t!=='calls';$('teamView').hidden=b.dataset.t!=='team';$('addView').hidden=b.dataset.t!=='add';$('profileView').hidden=b.dataset.t!=='profile';$('liveView').hidden=b.dataset.t!=='live';
   if(b.dataset.t==='profile')loadProfile();
   if(b.dataset.t==='add')prepAdd();
   if(b.dataset.t==='team')loadMembers()});
@@ -490,6 +554,79 @@ $('addForm').onsubmit=async e=>{e.preventDefault();
   const {error}=await sb.from('team_members').upsert(row);
   if(error){$('addMsg').style.color='var(--bad)';$('addMsg').textContent=error.message;return}
   $('addMsg').textContent=`Added ${row.email}.${loginMsg}${pass?' Send them the dashboard link, their email and password.':' No password given: use "Set password" to create their login.'}`;$('addForm').reset();loadMembers()};
+
+// ---- Live Coach ----
+const LV_STEPS=[['Opener','Hi, is this [name]? This is [you] with [company]. Is now a bad time for 60 seconds?'],['Reason for call','I saw your authority went active recently. We help small carriers keep the truck loaded with good-paying freight.'],['Discovery','What are you running, where do you like to run, and what did you average per mile last week?'],['Value pitch','Based on what you said, that is about $X more a week, and you never touch a load board.'],['Objections','Agree first, then ask a question, then give proof.'],['Close','How about we book your next load together this week? If you don\'t like the rate, you don\'t take it.'],['Lock-in','Can you send your MC number, W-9, insurance certificate and a void check today?'],['Tone','Calm, friendly, confident. Let the driver talk more than you.']];
+let lv=null;
+function lvRenderSteps(){$('lvSteps').innerHTML=LV_STEPS.map(([n,l],i)=>`<label class="lvstep${lv?.done?.has(i+1)?' on':''}"><input type="checkbox" data-s="${i+1}" ${lv?.done?.has(i+1)?'checked':''}> <span><b>${i+1}. ${n}</b><span class="small muted">${esc(l)}</span></span></label>`).join('')}
+lvRenderSteps();
+$('lvSteps').addEventListener('change',e=>{const s=+e.target.dataset.s;if(!lv)lv={done:new Set(),turns:[],objections:[]};e.target.checked?lv.done.add(s):lv.done.delete(s);lvRenderSteps()});
+function lvWav(chunks,rate){let n=0;for(const c of chunks)n+=c.length;const all=new Float32Array(n);let o=0;for(const c of chunks){all.set(c,o);o+=c.length}
+  const ratio=rate/16000,len=Math.floor(all.length/ratio),pcm=new Int16Array(len);let sum=0;
+  for(let i=0;i<len;i++){const a=Math.floor(i*ratio),b=Math.min(all.length,Math.floor((i+1)*ratio));let s=0;for(let j=a;j<b;j++)s+=all[j];const v=b>a?s/(b-a):0;sum+=v*v;pcm[i]=Math.max(-1,Math.min(1,v))*32767}
+  const buf=new ArrayBuffer(44+pcm.length*2),dv=new DataView(buf),w=(o,s)=>{for(let i=0;i<s.length;i++)dv.setUint8(o+i,s.charCodeAt(i))};
+  w(0,'RIFF');dv.setUint32(4,36+pcm.length*2,true);w(8,'WAVE');w(12,'fmt ');dv.setUint32(16,16,true);dv.setUint16(20,1,true);dv.setUint16(22,1,true);dv.setUint32(24,16000,true);dv.setUint32(28,32000,true);dv.setUint16(32,2,true);dv.setUint16(34,16,true);w(36,'data');dv.setUint32(40,pcm.length*2,true);
+  new Int16Array(buf,44).set(pcm);return {blob:new Blob([buf],{type:'audio/wav'}),rms:len?Math.sqrt(sum/len):0}}
+function lvTap(ctx,stream,key,meter){const src=ctx.createMediaStreamSource(stream),node=ctx.createScriptProcessor(4096,1,1),mute=ctx.createGain();mute.gain.value=0;
+  node.onaudioprocess=e=>{if(!lv?.running)return;const d=e.inputBuffer.getChannelData(0);lv.buf[key].push(new Float32Array(d));let s=0;for(let i=0;i<d.length;i+=8)s+=d[i]*d[i];$(meter).style.width=Math.min(100,Math.sqrt(s/(d.length/8))*400)+'%'};
+  src.connect(node);node.connect(mute);mute.connect(ctx.destination)}
+function lvContext(){return lv.turns.slice(-24).map(t=>`${t.who==='a'?'Agent':'Carrier'}: ${t.text}`).join('\n')}
+function lvRenderTx(){const box=$('lvTx');box.innerHTML=lv.turns.length?lv.turns.map(t=>`<div class="msg ${t.who}"><small>${t.who==='a'?'You':'Driver'}</small></div>`).join(''):'<p class="small muted">Listening… the conversation will appear here about 10 seconds behind.</p>';
+  box.querySelectorAll('.msg').forEach((m,i)=>m.append(document.createTextNode(lv.turns[i].text)));box.scrollTop=box.scrollHeight}
+async function lvSend(seg){
+  const fd=new FormData();if(seg.a)fd.append('agent',seg.a,'agent.wav');if(seg.c)fd.append('carrier',seg.c,'carrier.wav');
+  fd.append('context',lvContext());fd.append('done',[...lv.done].join(','));fd.append('about',[$('lvCarrier').value,$('lvAbout').value].filter(Boolean).join(' — '));
+  lv.inflight++;
+  try{const {data:{session}}=await sb.auth.getSession();
+    const r=await fetch(SUPABASE_URL+'/functions/v1/live-assist',{method:'POST',headers:{Authorization:'Bearer '+session.access_token,apikey:SUPABASE_KEY},body:fd});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){$('lvMsg').style.color='var(--bad)';$('lvMsg').textContent=d.error||('Live coach error '+r.status);return}
+    $('lvMsg').style.color='';$('lvMsg').textContent=lv.running?'Listening…':'';
+    if(d.agent)lv.turns.push({who:'a',text:d.agent});if(d.carrier)lv.turns.push({who:'c',text:d.carrier});
+    if(d.objection)lv.objections.push(d.objection);
+    if(+d.stage>=1&&+d.stage<=8){lv.done.add(+d.stage);lvRenderSteps()}
+    if(d.tip){$('lvTip').textContent=d.tip;lv.tipAt=Date.now();$('lvTipCard').classList.remove('flash');void $('lvTipCard').offsetWidth;$('lvTipCard').classList.add('flash')}
+    lvRenderTx();
+  }catch(e){$('lvMsg').style.color='var(--bad)';$('lvMsg').textContent='Connection problem: '+e.message}
+  finally{lv.inflight--}
+}
+$('lvStart').onclick=async()=>{
+  const msg=$('lvMsg');msg.style.color='';msg.textContent='Allow the microphone, then share your entire screen with system audio…';
+  let mic,disp;
+  try{mic=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true}})}catch(e){msg.style.color='var(--bad)';msg.textContent='Microphone was not allowed. Click the lock icon in the address bar and allow the microphone.';return}
+  try{disp=await navigator.mediaDevices.getDisplayMedia({video:true,audio:true,systemAudio:'include'})}catch(e){mic.getTracks().forEach(t=>t.stop());msg.style.color='var(--bad)';msg.textContent='Screen sharing was cancelled. Click Start again and choose Entire screen with "Also share system audio".';return}
+  if(!disp.getAudioTracks().length){mic.getTracks().forEach(t=>t.stop());disp.getTracks().forEach(t=>t.stop());msg.style.color='var(--bad)';msg.textContent='No computer sound was shared, so the coach cannot hear the driver. Choose "Entire screen" and switch on "Also share system audio".';return}
+  disp.getVideoTracks().forEach(t=>t.enabled=false);
+  const ctx=new (window.AudioContext||window.webkitAudioContext)();
+  lv={running:true,mic,disp,ctx,buf:{a:[],c:[]},turns:[],done:new Set(),objections:[],inflight:0,started:Date.now()};
+  lvTap(ctx,mic,'a','lvMe');lvTap(ctx,new MediaStream(disp.getAudioTracks()),'c','lvDrv');
+  disp.getAudioTracks()[0].onended=()=>{if(lv?.running)$('lvStop').click()};
+  lvRenderSteps();lvRenderTx();$('lvEnd').hidden=true;$('lvTip').textContent='Listening… the first suggestion comes about 10 seconds after people start talking.';
+  $('lvStart').hidden=true;$('lvStop').hidden=false;$('lvMeters').hidden=false;msg.textContent='Listening…';
+  lv.timer=setInterval(()=>{if(!lv?.running)return;const rate=lv.ctx.sampleRate;const A=lvWav(lv.buf.a,rate),C=lvWav(lv.buf.c,rate);lv.buf={a:[],c:[]};
+    const seg={a:A.rms>0.006?A.blob:null,c:C.rms>0.004?C.blob:null};
+    if(lv.tipAt)$('lvTipAge').textContent=`${Math.round((Date.now()-lv.tipAt)/1000)} s ago`;
+    if((seg.a||seg.c)&&lv.inflight<2)lvSend(seg)},10000);
+};
+$('lvStop').onclick=async()=>{
+  if(!lv)return;lv.running=false;clearInterval(lv.timer);
+  lv.mic.getTracks().forEach(t=>t.stop());lv.disp.getTracks().forEach(t=>t.stop());try{lv.ctx.close()}catch{}
+  $('lvStart').hidden=false;$('lvStop').hidden=true;$('lvMeters').hidden=true;$('lvMsg').textContent='Call ended.';
+  const mins=Math.max(1,Math.round((Date.now()-lv.started)/60000)),missing=LV_STEPS.map((s,i)=>i+1).filter(i=>!lv.done.has(i)&&i!==8).map(i=>LV_STEPS[i-1][0]);
+  $('lvSummary').textContent=`About ${mins} min. Objections heard: ${lv.objections.length?[...new Set(lv.objections)].join(', '):'none'}. Steps not reached: ${missing.length?missing.join(', '):'none'}.`;
+  $('lvEnd').hidden=!lv.turns.length;$('lvReviewMsg').textContent='';
+};
+$('lvReview').onclick=async()=>{
+  const tx=lvContext.call(null);const full=lv.turns.map(t=>`${t.who==='a'?'Agent':'Carrier'}: ${t.text}`).join('\n');
+  if(full.length<80){$('lvReviewMsg').textContent='The call is too short to review.';return}
+  const b=$('lvReview');b.disabled=true;b.textContent='Reviewing…';$('lvReviewMsg').style.color='';$('lvReviewMsg').textContent='This takes 20–60 seconds.';
+  try{const {data:{session}}=await sb.auth.getSession();
+    const r=await fetch(SUPABASE_URL+'/functions/v1/analyze-call',{method:'POST',headers:{Authorization:'Bearer '+session.access_token,apikey:SUPABASE_KEY,'Content-Type':'application/json'},body:JSON.stringify({agent:me.role==='manager'?($('lvAgentName')?.value||me.agent_name||'Manager'):(me.agent_name||''),carrier:$('lvCarrier').value,transcript:full})});
+    const d=await r.json().catch(()=>({}));if(!r.ok||!d.ok)throw new Error(d.error||('Request failed ('+r.status+')'));
+    selected=d.id;document.querySelector('#tabs button[data-t="calls"]').click();await load();const c=calls.find(x=>x.id===d.id);if(c){showDetail(c,true);render()}
+  }catch(e){$('lvReviewMsg').style.color='var(--bad)';$('lvReviewMsg').textContent=e.message}
+  finally{b.disabled=false;b.textContent='Get full review of this call'}
+};
 
 // ---- Profile ----
 async function loadProfile(){
