@@ -5,13 +5,20 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Zulu Call Coach</title>
 <link rel="icon" type="image/png" href="favicon.png">
+<script>try{const th=localStorage.getItem('cc-theme')||'light';const dark=th==='dark'||(th==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.theme=dark?'dark':'light'}catch{document.documentElement.dataset.theme='light'}</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
 /* Zulu Logistics brand: navy #0B1F3A, orange #F28C28, white. Light, professional dashboard. */
 :root{color-scheme:light;
 --bg:#F3F5F9;--panel:#FFFFFF;--ink:#0B1F3A;--muted:#5B6B82;--line:#DDE3EC;--acc:#F28C28;--accs:#FFF3E6;--navy:#0B1F3A;--navy2:#13294B;
---good:#1E8E5A;--mid:#B7791F;--bad:#C53030}
+--good:#1E8E5A;--mid:#B7791F;--bad:#C53030;--input:#FFFFFF}
+:root[data-theme=dark]{color-scheme:dark;
+--bg:#081426;--panel:#0F2140;--ink:#E8EEF7;--muted:#9AA9BF;--line:#21375A;--acc:#F28C28;--accs:#3A2712;--navy:#06101F;--navy2:#0B1F3A;
+--good:#4CC28A;--mid:#E0B040;--bad:#FF6B5E;--input:#0B1A33}
+:root[data-theme=dark] .card{box-shadow:none}
+:root[data-theme=dark] .card h2,:root[data-theme=dark] .lbrand b{color:var(--ink)}
+:root[data-theme=dark] .topbar{box-shadow:0 1px 0 var(--line)}
 *{box-sizing:border-box;min-width:0}
 body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 Inter,system-ui,sans-serif;overflow-x:clip}
 .wrap{max-width:1300px;margin:0 auto;padding:20px max(3vw,14px)}
@@ -32,6 +39,14 @@ body{font-family:Inter,Inter,system-ui,sans-serif}
 .topbar .me{display:flex;align-items:center;gap:10px;font-size:13px;color:#C9D3E3}
 .topbar .me button{background:transparent;color:#fff;border:1px solid rgba(255,255,255,.3);min-height:36px;font-size:14px}
 .topbar .me button:hover{background:rgba(255,255,255,.08)}
+.topbar .me .avatar-btn{width:42px;height:42px;min-height:42px;padding:0;border-radius:50%;background:var(--acc);border:2px solid rgba(255,255,255,.85);color:#fff;font-size:18px;font-weight:700;box-shadow:0 0 0 3px rgba(242,140,40,.25)}
+.topbar .me .avatar-btn:hover{background:#DD7A1A;border-color:#fff}
+.avatar,.avatar-btn{overflow:hidden}
+.avatar img,.avatar-btn img{width:100%;height:100%;object-fit:cover;display:block}
+button.b.sm,button.sm{min-height:36px;font-size:14px;padding:0 12px}
+.seg2{display:inline-flex;flex-wrap:wrap;gap:4px;background:var(--bg);padding:4px;border-radius:10px;border:1px solid var(--line)}
+.seg2 button{border:0;background:transparent;min-height:40px;font-size:14px}
+.seg2 button[aria-checked=true]{background:var(--panel);color:var(--ink);box-shadow:0 1px 3px rgba(11,31,58,.18);outline:2px solid var(--acc)}
 @media(max-width:820px){.topbar .tabs{order:3;flex-basis:100%;justify-content:flex-start;overflow-x:auto;flex-wrap:nowrap}.topbar .me{margin-left:auto}}
 h1{font-size:30px;line-height:1.05;margin:0;font-weight:700}
 h2{font-size:20px;margin:0 0 10px;font-weight:600}
@@ -39,7 +54,7 @@ h3{font-size:15px;margin:0 0 8px;font-weight:600}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;box-shadow:0 1px 2px rgba(11,31,58,.05)}
 .card h2{color:var(--navy)}
 .muted{color:var(--muted)}.small{font-size:13px}
-input,select,textarea{font:16px Inter,Inter,system-ui,sans-serif;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:10px;padding:9px 11px;min-height:44px}
+input,select,textarea{font:16px Inter,system-ui,sans-serif;color:var(--ink);background:var(--input);border:1px solid var(--line);border-radius:10px;padding:9px 11px;min-height:44px}
 button{font:600 15px Inter,system-ui,sans-serif;min-height:44px;padding:0 16px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
 button.primary{background:var(--acc);border-color:var(--acc);color:#fff}
 button.primary:hover{background:#DD7A1A}
@@ -109,7 +124,7 @@ input[readonly]{opacity:.7}
 .profile{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}
 @media(max-width:820px){.profile{grid-template-columns:minmax(0,1fr)}}
 .phead{display:flex;gap:14px;align-items:center;margin-bottom:14px}
-.avatar{width:56px;height:56px;border-radius:50%;background:var(--acc);color:#fff;display:grid;place-items:center;font-size:24px;font-weight:700;flex:none}
+.avatar{width:72px;height:72px;border-radius:50%;background:var(--acc);color:#fff;display:grid;place-items:center;font-size:28px;font-weight:700;flex:none}
 .pinfo{display:grid;grid-template-columns:130px minmax(0,1fr);gap:8px 12px;margin:0}
 .pinfo dt{color:var(--muted);font-size:14px}.pinfo dd{margin:0;overflow-wrap:anywhere}
 .pstats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
@@ -150,8 +165,8 @@ label{font-size:13px;font-weight:500;display:grid;gap:4px}
 <div id="appView" hidden>
   <header class="topbar"><div class="in">
     <div class="brand"><img src="logo.png" alt="Zulu Logistics"><div><b>Zulu Logistics</b><span>Call Coach</span></div></div>
-    <nav class="tabs" id="tabs" aria-label="Sections"><button data-t="calls" aria-pressed="true">Calls</button><button data-t="live" aria-pressed="false">Live Coach</button><button data-t="add" aria-pressed="false">Add a call</button><button data-t="profile" aria-pressed="false">Profile</button><button data-t="team" id="teamTab" hidden aria-pressed="false">Team access</button></nav>
-    <div class="me"><span id="who"></span><button id="logout">Sign out</button></div>
+    <nav class="tabs" id="tabs" aria-label="Sections"><button data-t="calls" aria-pressed="true">Calls</button><button data-t="live" aria-pressed="false">Live Coach</button><button data-t="add" aria-pressed="false">Add a call</button><button data-t="profile" aria-pressed="false" hidden id="profileTab">Profile</button><button data-t="team" id="teamTab" hidden aria-pressed="false">Team access</button></nav>
+    <div class="me"><span id="who" hidden></span><button id="logout" hidden>Sign out</button><button id="avatarBtn" class="avatar-btn" title="My profile" aria-label="Open my profile">?</button></div>
   </div></header>
   <div class="wrap">
   <div id="sync" class="status" hidden></div>
@@ -248,7 +263,9 @@ label{font-size:13px;font-weight:500;display:grid;gap:4px}
   <section id="profileView" hidden>
     <div class="profile">
       <div class="card">
-        <div class="phead"><div class="avatar" id="pAvatar"></div><div><h2 id="pName" style="margin:0"></h2><div class="small muted" id="pRole"></div></div></div>
+        <div class="phead"><div class="avatar" id="pAvatar"></div><div><h2 id="pName" style="margin:0"></h2><div class="small muted" id="pRole"></div>
+          <div class="bar" style="margin-top:8px"><button type="button" class="b sm" id="picUp">Upload picture</button><button type="button" class="link" id="picDel" hidden>Remove</button><input type="file" id="picFile" accept="image/jpeg,image/png,image/webp" hidden></div>
+          <p class="small" id="picMsg" style="margin:4px 0 0"></p></div></div>
         <dl class="pinfo">
           <dt>Email</dt><dd id="pEmail"></dd>
           <dt>Role</dt><dd id="pRole2"></dd>
@@ -270,6 +287,15 @@ label{font-size:13px;font-weight:500;display:grid;gap:4px}
           <div class="bar"><button class="primary" type="submit">Save password</button></div>
           <p class="small" id="pwMsg" style="margin:0"></p>
         </form>
+      </div>
+      <div class="card">
+        <h2>Appearance</h2>
+        <p class="small muted" style="margin-top:0">Choose how Call Coach looks on this computer.</p>
+        <div class="seg2" id="themePick" role="radiogroup" aria-label="Theme">
+          <button type="button" data-th="light" role="radio">Light</button>
+          <button type="button" data-th="dark" role="radio">Dark</button>
+          <button type="button" data-th="system" role="radio">Same as computer</button>
+        </div>
       </div>
       <div class="card">
         <h2>Sign out</h2>
@@ -317,6 +343,7 @@ $('loginForm').onsubmit=async e=>{e.preventDefault();$('loginMsg').textContent='
   const {error}=await sb.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});
   if(error)$('loginMsg').textContent=error.message};
 $('logout').onclick=()=>sb.auth.signOut();
+$('avatarBtn').onclick=()=>document.querySelector('#tabs button[data-t="profile"]').click();
 // Never await Supabase calls inside the auth callback (it can lock up); run start() on the next tick.
 sb.auth.onAuthStateChange((_e,session)=>setTimeout(()=>start(session),0));
 sb.auth.getSession().then(({data})=>start(data.session)).catch(()=>start(null));
@@ -337,6 +364,7 @@ async function start(session){
   $('loginView').hidden=true;$('appView').hidden=false;
   if(!me){$('who').textContent=session.user.email;$('callsView').innerHTML='<div class="card empty">Your login works, but you have not been given access yet. Ask your manager to add '+esc(session.user.email)+' under Team access.</div>';return}
   $('who').textContent=`${session.user.email} · ${me.role==='manager'?'Manager':'Agent: '+(me.agent_name||'not linked')}`;
+  {const nm=me.role==='agent'&&me.agent_name?me.agent_name:session.user.email;myInitial=(nm.trim()[0]||'?').toUpperCase();myUid=session.user.id;myPicV=session.user.user_metadata?.avatar_v||null;paintAvatars();$('avatarBtn').title=`${session.user.email} — open my profile`}
   $('teamTab').hidden=me.role!=='manager';$('boardCard').hidden=me.role!=='manager';
   await load();timer=setInterval(load,60000);
 }
@@ -646,11 +674,40 @@ $('lvReview').onclick=async()=>{
   finally{b.disabled=false;b.textContent='Get full review of this call'}
 };
 
+// ---- Profile picture ----
+let myInitial='?',myUid=null,myPicV=null;
+function picUrl(){return myPicV&&myUid?`${SUPABASE_URL}/storage/v1/object/public/avatars/${myUid}.jpg?v=${encodeURIComponent(myPicV)}`:null}
+function paintAvatars(){const u=picUrl();for(const el of [$('avatarBtn'),$('pAvatar')]){if(!el)continue;el.textContent='';
+  if(u){const im=new Image();im.alt='';im.src=u;im.onerror=()=>{el.textContent=myInitial};el.appendChild(im)}else el.textContent=myInitial}
+  if($('picDel'))$('picDel').hidden=!u;if($('picUp'))$('picUp').textContent=u?'Change picture':'Upload picture'}
+$('picUp').onclick=()=>$('picFile').click();
+$('picFile').onchange=async()=>{const f=$('picFile').files[0];$('picFile').value='';if(!f)return;const msg=$('picMsg');msg.style.color='';
+  if(f.size>15*1048576){msg.style.color='var(--bad)';msg.textContent='That picture is too large (max 15 MB).';return}
+  msg.textContent='Uploading…';
+  try{const bmp=await createImageBitmap(f);const s=Math.min(bmp.width,bmp.height),c=document.createElement('canvas');c.width=c.height=256;
+    c.getContext('2d').drawImage(bmp,(bmp.width-s)/2,(bmp.height-s)/2,s,s,0,0,256,256);
+    const blob=await new Promise(r=>c.toBlob(r,'image/jpeg',0.85));
+    const {error}=await sb.storage.from('avatars').upload(`${myUid}.jpg`,blob,{upsert:true,contentType:'image/jpeg',cacheControl:'3600'});if(error)throw error;
+    const v=String(Date.now());const r=await sb.auth.updateUser({data:{avatar_v:v}});if(r.error)throw r.error;
+    myPicV=v;paintAvatars();msg.textContent='Picture updated.'}
+  catch(e){msg.style.color='var(--bad)';msg.textContent='Could not upload the picture: '+(e.message||e)}};
+$('picDel').onclick=async()=>{const msg=$('picMsg');msg.style.color='';msg.textContent='Removing…';
+  try{await sb.storage.from('avatars').remove([`${myUid}.jpg`]);const r=await sb.auth.updateUser({data:{avatar_v:null}});if(r.error)throw r.error;myPicV=null;paintAvatars();msg.textContent='Picture removed.'}
+  catch(e){msg.style.color='var(--bad)';msg.textContent=e.message||String(e)}};
+
+// ---- Theme ----
+function getTheme(){try{return localStorage.getItem('cc-theme')||'light'}catch{return 'light'}}
+function applyTheme(th){const dark=th==='dark'||(th==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);document.documentElement.dataset.theme=dark?'dark':'light';
+  document.querySelectorAll('#themePick button').forEach(b=>b.setAttribute('aria-checked',b.dataset.th===th))}
+document.querySelectorAll('#themePick button').forEach(b=>b.onclick=()=>{try{localStorage.setItem('cc-theme',b.dataset.th)}catch{}applyTheme(b.dataset.th)});
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change',()=>{if(getTheme()==='system')applyTheme('system')});
+applyTheme(getTheme());
+
 // ---- Profile ----
 async function loadProfile(){
   const {data:{user}}=await sb.auth.getUser();if(!user)return;
   const name=me.role==='agent'?(me.agent_name||user.email):(user.email.split('@')[0]);
-  $('pAvatar').textContent=(name.trim()[0]||'?').toUpperCase();
+  paintAvatars();
   $('pName').textContent=name;$('pRole').textContent=me.role==='manager'?'Manager':'Sales agent';
   $('pEmail').textContent=user.email;$('pRole2').textContent=me.role==='manager'?'Manager — sees every call and manages the team':'Sales agent — sees own calls only';
   $('pAgent').textContent=me.agent_name||'—';
