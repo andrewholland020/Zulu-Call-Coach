@@ -7,7 +7,7 @@ import { encodeBase64 } from "jsr:@std/encoding@1/base64";
 const env = (k: string, d = "") => (Deno.env.get(k) ?? d).trim();
 // Provider order: Gemini (GEMINI_API_KEY), then OpenAI, then Groq.
 const USE_GEMINI = !!env("GEMINI_API_KEY");
-const GEMINI_MODELS = env("GEMINI_MODEL", "gemini-flash-latest,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash,gemini-2.5-flash").split(",").map((s) => s.trim());
+const GEMINI_MODELS = env("GEMINI_MODEL", "gemini-flash-latest,gemini-flash-lite-latest,gemini-2.5-flash").split(",").map((s) => s.trim());
 const GEMINI_BASE = "https://generativelanguage.googleapis.com";
 const USE_OPENAI = !!env("OPENAI_API_KEY");
 const AI_BASE = USE_OPENAI ? "https://api.openai.com/v1" : "https://api.groq.com/openai/v1";
@@ -119,6 +119,30 @@ async function analyze(agent: string, transcript: string): Promise<{ result: any
   throw new Error(`Analysis failed — ${lastErr}`);
 }
 
+// One Gemini request with little "thinking" (much faster) and a time limit, so a slow model gives way to the next.
+async function geminiCall(model: string, parts: unknown[], maxTokens: number, timeoutMs: number) {
+  const thinking = /2\.5/.test(model) ? { thinkingBudget: 0 } : { thinkingLevel: "low" };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const gen: Record<string, unknown> = { responseMimeType: "application/json", temperature: 0.2, maxOutputTokens: maxTokens };
+    if (attempt === 0) gen.thinkingConfig = thinking;
+    const ctl = new AbortController();
+    const t = setTimeout(() => ctl.abort(), timeoutMs);
+    try {
+      const r = await fetch(`${GEMINI_BASE}/v1beta/models/${model}:generateContent`, {
+        method: "POST", signal: ctl.signal,
+        headers: { "x-goog-api-key": env("GEMINI_API_KEY"), "Content-Type": "application/json" },
+        body: JSON.stringify({ contents: [{ role: "user", parts }], generationConfig: gen }),
+      });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok && r.status === 400 && attempt === 0 && /think/i.test(d.error?.message ?? "")) continue; // model does not take this setting
+      return { ok: r.ok, status: r.status, d };
+    } catch (e) {
+      return { ok: false, status: 504, d: { error: { message: e instanceof Error && e.name === "AbortError" ? `took longer than ${timeoutMs / 1000}s` : String(e) } } };
+    } finally { clearTimeout(t); }
+  }
+  return { ok: false, status: 400, d: { error: { message: "request rejected" } } };
+}
+
 // ---------- Gemini: one call listens to the audio (or reads the transcript) and reviews it ----------
 async function geminiUpload(file: File): Promise<{ uri: string; mime: string }> {
   const mime = file.type || "audio/mpeg";
@@ -159,13 +183,13 @@ async function geminiReview(agent: string, transcript: string, file: File | null
   }
   parts.unshift({ text: prompt });
   let lastErr = "";
-  for (const model of GEMINI_MODELS) {
-    const r = await fetch(`${GEMINI_BASE}/v1beta/models/${model}:generateContent`, {
-      method: "POST",
-      headers: { "x-goog-api-key": env("GEMINI_API_KEY"), "Content-Type": "application/json" },
-      body: JSON.stringify({ contents: [{ role: "user", parts }], generationConfig: { responseMimeType: "application/json", temperature: 0.2, maxOutputTokens: 16384 } }),
-    });
-    const d = await r.json().catch(() => ({}));
+  const started = Date.now();
+  for (const [i, model] of GEMINI_MODELS.entries()) {
+    const left = 135_000 - (Date.now() - started);
+    if (left < 15_000) break;
+    const budget = i === GEMINI_MODELS.length - 1 ? left : Math.min(left, 65_000);
+    const { ok, status, d } = await geminiCall(model, parts, 8192, budget);
+    const r = { ok, status };
     if (r.ok) {
       const text = (d.candidates?.[0]?.content?.parts ?? []).map((p: { text?: string }) => p.text ?? "").join("");
       try {

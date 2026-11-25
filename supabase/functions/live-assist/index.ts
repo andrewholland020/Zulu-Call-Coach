@@ -17,6 +17,7 @@ const json = (body: unknown, status = 200) =>
 
 // cache who is allowed, so each 10-second piece does not re-check the database
 const okUsers = new Map<string, number>();
+const noThink = new Set<string>();
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
@@ -65,11 +66,12 @@ Listen to the two new audio pieces below. Write exactly what each person said in
 Return ONLY JSON: {"agent":"words the agent said in audio 1","carrier":"words the driver said in audio 2","tip":"ONE short line (max 20 words) the agent can say right now, in natural spoken English; empty if nothing useful to add","stage":"the process step number (1-8) the call is now at, or empty","objection":"short name of the driver's objection if he raised one in audio 2, else empty"}` });
 
   let lastErr = "";
-  for (const model of MODELS) {
+  const list = [...MODELS];
+  for (const model of list) {
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: "POST",
       headers: { "x-goog-api-key": env("GEMINI_API_KEY"), "Content-Type": "application/json" },
-      body: JSON.stringify({ contents: [{ role: "user", parts }], generationConfig: { responseMimeType: "application/json", temperature: 0.2, maxOutputTokens: 1024 } }),
+      body: JSON.stringify({ contents: [{ role: "user", parts }], generationConfig: { responseMimeType: "application/json", temperature: 0.2, maxOutputTokens: 1024, ...(noThink.has(model) ? {} : { thinkingConfig: /2\.5/.test(model) ? { thinkingBudget: 0 } : { thinkingLevel: "low" } }) } }),
     });
     const d = await r.json().catch(() => ({}));
     if (r.ok) {
@@ -83,6 +85,7 @@ Return ONLY JSON: {"agent":"words the agent said in audio 1","carrier":"words th
       } catch { lastErr = `${model}: bad JSON`; }
     } else {
       lastErr = `${model}: ${r.status} ${d.error?.message ?? ""}`;
+      if (r.status === 400 && /think/i.test(d.error?.message ?? "") && !noThink.has(model)) { noThink.add(model); list.splice(list.indexOf(model) + 1, 0, model); continue; }
       if (r.status === 400 && /API key/i.test(d.error?.message ?? "")) break;
     }
   }
