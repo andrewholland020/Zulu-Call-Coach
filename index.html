@@ -65,7 +65,7 @@ ul{margin:0;padding-left:20px}li{margin-bottom:4px}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}@media(max-width:520px){.two{grid-template-columns:1fr}}
 pre.tx{white-space:pre-wrap;font:14px/1.5 Geist,system-ui,sans-serif;max-height:420px;overflow:auto;background:var(--bg);padding:12px;border-radius:10px}
 .empty{color:var(--muted);text-align:center;padding:40px 12px}
-.form-row{display:grid;grid-template-columns:2fr 1fr 2fr auto;gap:8px;align-items:end}
+.form-row{display:grid;grid-template-columns:2fr 1fr 2fr 1.5fr auto;gap:8px;align-items:end}
 @media(max-width:700px){.form-row{grid-template-columns:1fr}}
 @media(max-width:560px){.addrow{grid-template-columns:1fr!important}}
 input[readonly]{opacity:.7}
@@ -106,9 +106,18 @@ label{font-size:13px;font-weight:500;display:grid;gap:4px}
     <div><h1>Call Coach</h1><div class="muted small" id="who"></div></div>
     <div class="bar">
       <div class="bar tabs" id="tabs"><button data-t="calls" aria-pressed="true">Calls</button><button data-t="add" aria-pressed="false">Add a call</button><button data-t="team" id="teamTab" hidden aria-pressed="false">Team access</button></div>
-      <button id="logout">Sign out</button>
+      <button id="pwBtn">My password</button><button id="logout">Sign out</button>
     </div>
   </header>
+  <div id="pwView" class="card" hidden style="max-width:520px;margin-bottom:14px">
+    <h2>Change my password</h2>
+    <form id="pwForm" style="display:grid;gap:10px">
+      <label>New password (at least 8 characters)<input id="pw1" type="password" autocomplete="new-password" minlength="8" required></label>
+      <label>Type it again<input id="pw2" type="password" autocomplete="new-password" minlength="8" required></label>
+      <div class="bar"><button class="primary" type="submit">Save password</button><button type="button" id="pwCancel">Cancel</button></div>
+      <p class="small" id="pwMsg" style="margin:0"></p>
+    </form>
+  </div>
   <div id="sync" class="status" hidden></div>
   <div id="inbox" class="status" hidden style="border-color:var(--acc)"></div>
 
@@ -159,11 +168,12 @@ label{font-size:13px;font-weight:500;display:grid;gap:4px}
   <section id="teamView" hidden>
     <div class="card">
       <h2>Who can open this dashboard</h2>
-      <p class="small muted" style="margin-top:0">First create the person's login in Supabase (Authentication → Users → Add user, with "Auto confirm" on). Then add them here. Agents only see their own calls; "Agent name" must match their name in RingCentral.</p>
+      <p class="small muted" style="margin-top:0">Add a person with a password to create their login, then give them the dashboard link, their email and that password. Agents only see their own calls; "Agent name" must be written the same way every time a call is added for them.</p>
       <form id="addForm" class="form-row">
         <label>Email<input id="mEmail" type="email" required></label>
         <label>Role<select id="mRole"><option value="agent">Agent</option><option value="manager">Manager</option></select></label>
-        <label>Agent name in RingCentral<input id="mAgent" list="agentNames" placeholder="e.g. Ali Khan"><datalist id="agentNames"></datalist></label>
+        <label>Agent name<input id="mAgent" list="agentNames" placeholder="e.g. Ali Khan"><datalist id="agentNames"></datalist></label>
+        <label>Password<input id="mPass" type="password" autocomplete="new-password" placeholder="min 8 characters"></label>
         <button class="primary" type="submit">Add</button>
       </form>
       <p class="small" id="addMsg"></p>
@@ -378,9 +388,23 @@ function alertBox(m){$('sync').hidden=false;$('sync').className='status err';$('
 async function loadMembers(){
   const {data,error}=await sb.from('team_members').select('*').order('role').order('email');
   if(error){$('members').innerHTML=`<tr><td colspan="4">${esc(error.message)}</td></tr>`;return}
-  $('members').innerHTML=(data||[]).map(m=>`<tr><td>${esc(m.email)}</td><td>${m.role==='manager'?'Manager':'Agent'}</td><td>${esc(m.agent_name||'—')}</td><td class="n">${m.email.toLowerCase()===me.email.toLowerCase()?'<span class="small muted">You</span>':`<button class="link" data-del="${esc(m.email)}">Remove</button>`}</td></tr>`).join('');
+  $('members').innerHTML=(data||[]).map(m=>`<tr><td>${esc(m.email)}</td><td>${m.role==='manager'?'Manager':'Agent'}</td><td>${esc(m.agent_name||'—')}</td><td class="n"><span class="pwcell"><button class="link" data-pw="${esc(m.email)}">Set password</button></span>${m.email.toLowerCase()===me.email.toLowerCase()?' <span class="small muted">You</span>':` <button class="link" data-del="${esc(m.email)}">Remove</button>`}</td></tr>`).join('');
 }
-$('members').addEventListener('click',async e=>{const b=e.target.closest('[data-del]');if(!b)return;
+async function teamAdmin(action,email,password){
+  const {data:{session}}=await sb.auth.getSession();
+  const r=await fetch(SUPABASE_URL+'/functions/v1/team-admin',{method:'POST',headers:{Authorization:'Bearer '+session.access_token,apikey:SUPABASE_KEY,'Content-Type':'application/json'},body:JSON.stringify({action,email,password})});
+  const d=await r.json().catch(()=>({}));if(!r.ok||!d.ok)throw new Error(d.error||('Request failed ('+r.status+')'));return d.message;
+}
+$('members').addEventListener('click',async e=>{
+  const pw=e.target.closest('[data-pw]');
+  if(pw){const cell=pw.parentElement,email=pw.dataset.pw;
+    cell.innerHTML='<input type="password" class="pwin" placeholder="New password" minlength="8" style="width:150px;min-height:36px;padding:4px 8px"> <button class="link pwsave">Save</button> <button class="link pwx">Cancel</button>';
+    const inp=cell.querySelector('.pwin');inp.focus();
+    cell.querySelector('.pwx').onclick=()=>loadMembers();
+    cell.querySelector('.pwsave').onclick=async()=>{const v=inp.value;if(v.length<8){$('addMsg').style.color='var(--bad)';$('addMsg').textContent='Password must be at least 8 characters.';return}
+      try{const msg=await teamAdmin('create_login',email,v);$('addMsg').style.color='';$('addMsg').textContent=`${msg} Give ${email} the new password yourself.`;loadMembers()}catch(err){$('addMsg').style.color='var(--bad)';$('addMsg').textContent=err.message}};
+    return}
+  const b=e.target.closest('[data-del]');if(!b)return;
   if(b.dataset.confirm!=='1'){b.dataset.confirm='1';b.textContent='Click again to remove';return}
   const {error}=await sb.from('team_members').delete().eq('email',b.dataset.del);$('addMsg').textContent=error?error.message:'Removed.';loadMembers()});
 // ---- Add a call ----
@@ -424,9 +448,24 @@ $('addCall').onsubmit=async e=>{e.preventDefault();
 
 $('addForm').onsubmit=async e=>{e.preventDefault();
   const row={email:$('mEmail').value.trim().toLowerCase(),role:$('mRole').value,agent_name:$('mAgent').value.trim()||null};
-  if(row.role==='agent'&&!row.agent_name){$('addMsg').textContent='Agents need their RingCentral name so they see their own calls.';return}
+  const pass=$('mPass').value;$('addMsg').style.color='';
+  if(row.role==='agent'&&!row.agent_name){$('addMsg').textContent='Agents need an agent name so they see their own calls.';return}
+  if(pass&&pass.length<8){$('addMsg').style.color='var(--bad)';$('addMsg').textContent='Password must be at least 8 characters.';return}
+  let loginMsg='';
+  if(pass){try{loginMsg=' '+await teamAdmin('create_login',row.email,pass)}catch(err){$('addMsg').style.color='var(--bad)';$('addMsg').textContent=err.message;return}}
   const {error}=await sb.from('team_members').upsert(row);
-  $('addMsg').textContent=error?error.message:`Added ${row.email}.`;if(!error){$('addForm').reset();loadMembers()}};
+  if(error){$('addMsg').style.color='var(--bad)';$('addMsg').textContent=error.message;return}
+  $('addMsg').textContent=`Added ${row.email}.${loginMsg}${pass?' Send them the dashboard link, their email and password.':' No password given: use "Set password" to create their login.'}`;$('addForm').reset();loadMembers()};
+
+// ---- My password ----
+$('pwBtn').onclick=()=>{$('pwView').hidden=!$('pwView').hidden;$('pwMsg').textContent='';if(!$('pwView').hidden)$('pw1').focus()};
+$('pwCancel').onclick=()=>{$('pwView').hidden=true;$('pwForm').reset()};
+$('pwForm').onsubmit=async e=>{e.preventDefault();const a=$('pw1').value,b=$('pw2').value,msg=$('pwMsg');msg.style.color='var(--bad)';
+  if(a.length<8){msg.textContent='Use at least 8 characters.';return}
+  if(a!==b){msg.textContent='The two passwords do not match.';return}
+  const {error}=await sb.auth.updateUser({password:a});
+  if(error){msg.textContent=error.message;return}
+  msg.style.color='';msg.textContent='Password changed. Use it next time you sign in.';$('pwForm').reset();setTimeout(()=>{$('pwView').hidden=true},2500)};
 }
 </script>
 </body>
