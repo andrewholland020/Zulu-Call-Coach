@@ -69,6 +69,14 @@ pre.tx{white-space:pre-wrap;font:14px/1.5 Geist,system-ui,sans-serif;max-height:
 @media(max-width:700px){.form-row{grid-template-columns:1fr}}
 @media(max-width:560px){.addrow{grid-template-columns:1fr!important}}
 input[readonly]{opacity:.7}
+.profile{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:14px;align-items:start}
+@media(max-width:820px){.profile{grid-template-columns:minmax(0,1fr)}}
+.phead{display:flex;gap:14px;align-items:center;margin-bottom:14px}
+.avatar{width:56px;height:56px;border-radius:50%;background:var(--acc);color:#fff;display:grid;place-items:center;font-size:24px;font-weight:700;flex:none}
+.pinfo{display:grid;grid-template-columns:130px minmax(0,1fr);gap:8px 12px;margin:0}
+.pinfo dt{color:var(--muted);font-size:14px}.pinfo dd{margin:0;overflow-wrap:anywhere}
+.pstats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.ptile{background:var(--bg);border-radius:10px;padding:10px 12px}.ptile b{display:block;font-size:24px;font-variant-numeric:tabular-nums}
 .notes{margin-top:10px;display:grid;gap:8px}
 .note-item{padding:9px 12px;border-radius:10px;background:var(--panel);border:1px solid var(--line)}
 .note-item.manager{border-left:3px solid var(--acc)}
@@ -105,19 +113,10 @@ label{font-size:13px;font-weight:500;display:grid;gap:4px}
   <header>
     <div><h1>Call Coach</h1><div class="muted small" id="who"></div></div>
     <div class="bar">
-      <div class="bar tabs" id="tabs"><button data-t="calls" aria-pressed="true">Calls</button><button data-t="add" aria-pressed="false">Add a call</button><button data-t="team" id="teamTab" hidden aria-pressed="false">Team access</button></div>
-      <button id="pwBtn">My password</button><button id="logout">Sign out</button>
+      <div class="bar tabs" id="tabs"><button data-t="calls" aria-pressed="true">Calls</button><button data-t="add" aria-pressed="false">Add a call</button><button data-t="profile" aria-pressed="false">Profile</button><button data-t="team" id="teamTab" hidden aria-pressed="false">Team access</button></div>
+      <button id="logout">Sign out</button>
     </div>
   </header>
-  <div id="pwView" class="card" hidden style="max-width:520px;margin-bottom:14px">
-    <h2>Change my password</h2>
-    <form id="pwForm" style="display:grid;gap:10px">
-      <label>New password (at least 8 characters)<input id="pw1" type="password" autocomplete="new-password" minlength="8" required></label>
-      <label>Type it again<input id="pw2" type="password" autocomplete="new-password" minlength="8" required></label>
-      <div class="bar"><button class="primary" type="submit">Save password</button><button type="button" id="pwCancel">Cancel</button></div>
-      <p class="small" id="pwMsg" style="margin:0"></p>
-    </form>
-  </div>
   <div id="sync" class="status" hidden></div>
   <div id="inbox" class="status" hidden style="border-color:var(--acc)"></div>
 
@@ -162,6 +161,40 @@ label{font-size:13px;font-weight:500;display:grid;gap:4px}
         <div class="bar"><button class="primary" type="submit" id="acGo">Review this call</button></div>
         <p class="small" id="acMsg" style="margin:0"></p>
       </form>
+    </div>
+  </section>
+
+  <section id="profileView" hidden>
+    <div class="profile">
+      <div class="card">
+        <div class="phead"><div class="avatar" id="pAvatar"></div><div><h2 id="pName" style="margin:0"></h2><div class="small muted" id="pRole"></div></div></div>
+        <dl class="pinfo">
+          <dt>Email</dt><dd id="pEmail"></dd>
+          <dt>Role</dt><dd id="pRole2"></dd>
+          <dt>Agent name</dt><dd id="pAgent"></dd>
+          <dt>Password</dt><dd>•••••••• <span class="small muted">(hidden for security — change it below)</span></dd>
+          <dt>Member since</dt><dd id="pSince"></dd>
+          <dt>Last sign in</dt><dd id="pLast"></dd>
+        </dl>
+      </div>
+      <div class="card">
+        <h2 id="pStatsTitle">My calls</h2>
+        <div class="pstats" id="pStats"><p class="small muted">Loading…</p></div>
+      </div>
+      <div class="card">
+        <h2>Change password</h2>
+        <form id="pwForm" style="display:grid;gap:10px">
+          <label>New password (at least 8 characters)<input id="pw1" type="password" autocomplete="new-password" minlength="8" required></label>
+          <label>Type it again<input id="pw2" type="password" autocomplete="new-password" minlength="8" required></label>
+          <div class="bar"><button class="primary" type="submit">Save password</button></div>
+          <p class="small" id="pwMsg" style="margin:0"></p>
+        </form>
+      </div>
+      <div class="card">
+        <h2>Sign out</h2>
+        <p class="small muted" style="margin-top:0">Sign out on this device, or on every device where you are signed in (for example after using a shared computer).</p>
+        <div class="bar"><button id="soHere">Sign out here</button><button id="soAll">Sign out everywhere</button></div>
+      </div>
     </div>
   </section>
 
@@ -228,7 +261,8 @@ async function start(session){
 
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#tabs button').forEach(x=>x.setAttribute('aria-pressed',x===b));
-  $('callsView').hidden=b.dataset.t!=='calls';$('teamView').hidden=b.dataset.t!=='team';$('addView').hidden=b.dataset.t!=='add';
+  $('callsView').hidden=b.dataset.t!=='calls';$('teamView').hidden=b.dataset.t!=='team';$('addView').hidden=b.dataset.t!=='add';$('profileView').hidden=b.dataset.t!=='profile';
+  if(b.dataset.t==='profile')loadProfile();
   if(b.dataset.t==='add')prepAdd();
   if(b.dataset.t==='team')loadMembers()});
 
@@ -457,15 +491,35 @@ $('addForm').onsubmit=async e=>{e.preventDefault();
   if(error){$('addMsg').style.color='var(--bad)';$('addMsg').textContent=error.message;return}
   $('addMsg').textContent=`Added ${row.email}.${loginMsg}${pass?' Send them the dashboard link, their email and password.':' No password given: use "Set password" to create their login.'}`;$('addForm').reset();loadMembers()};
 
-// ---- My password ----
-$('pwBtn').onclick=()=>{$('pwView').hidden=!$('pwView').hidden;$('pwMsg').textContent='';if(!$('pwView').hidden)$('pw1').focus()};
-$('pwCancel').onclick=()=>{$('pwView').hidden=true;$('pwForm').reset()};
+// ---- Profile ----
+async function loadProfile(){
+  const {data:{user}}=await sb.auth.getUser();if(!user)return;
+  const name=me.role==='agent'?(me.agent_name||user.email):(user.email.split('@')[0]);
+  $('pAvatar').textContent=(name.trim()[0]||'?').toUpperCase();
+  $('pName').textContent=name;$('pRole').textContent=me.role==='manager'?'Manager':'Sales agent';
+  $('pEmail').textContent=user.email;$('pRole2').textContent=me.role==='manager'?'Manager — sees every call and manages the team':'Sales agent — sees own calls only';
+  $('pAgent').textContent=me.agent_name||'—';
+  const fd=s=>s?new Date(s).toLocaleString([], {dateStyle:'medium',timeStyle:'short'}):'—';
+  $('pSince').textContent=fd(user.created_at);$('pLast').textContent=fd(user.last_sign_in_at);
+  $('pStatsTitle').textContent=me.role==='manager'?'Team calls':'My calls';
+  const since=new Date();since.setDate(1);since.setHours(0,0,0,0);
+  let q=sb.from('calls').select('overall,outcome,started_at,status').eq('status','done').order('started_at',{ascending:false}).limit(5000);
+  if(me.role==='agent')q=q.ilike('agent_name',me.agent_name||'');
+  const {data}=await q;const all=(data||[]).filter(c=>c.outcome!=='Not a sales call'&&c.outcome!=='Voicemail');
+  const month=all.filter(c=>new Date(c.started_at)>=since);
+  const avg=L=>L.length?Math.round(L.reduce((s,c)=>s+(c.overall||0),0)/L.length):null;
+  const won=L=>L.filter(c=>WON.includes(c.outcome)).length;
+  const tiles=[['Calls reviewed (all time)',all.length],['Average score (all time)',avg(all)??'—'],['Calls this month',month.length],['Average this month',avg(month)??'—'],['Signed or trial (this month)',won(month)],['Last call',all[0]?new Date(all[0].started_at).toLocaleDateString():'—']];
+  $('pStats').innerHTML=tiles.map(([l,v])=>`<div class="ptile"><span class="small muted">${l}</span><b>${esc(v)}</b></div>`).join('');
+}
 $('pwForm').onsubmit=async e=>{e.preventDefault();const a=$('pw1').value,b=$('pw2').value,msg=$('pwMsg');msg.style.color='var(--bad)';
   if(a.length<8){msg.textContent='Use at least 8 characters.';return}
   if(a!==b){msg.textContent='The two passwords do not match.';return}
   const {error}=await sb.auth.updateUser({password:a});
   if(error){msg.textContent=error.message;return}
-  msg.style.color='';msg.textContent='Password changed. Use it next time you sign in.';$('pwForm').reset();setTimeout(()=>{$('pwView').hidden=true},2500)};
+  msg.style.color='var(--good)';msg.textContent='Password changed. Use it next time you sign in.';$('pwForm').reset()};
+$('soHere').onclick=()=>sb.auth.signOut();
+$('soAll').onclick=async()=>{const b=$('soAll');if(b.dataset.c!=='1'){b.dataset.c='1';b.textContent='Click again to sign out everywhere';return}await sb.auth.signOut({scope:'global'})};
 }
 </script>
 </body>
