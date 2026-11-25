@@ -84,6 +84,12 @@ label{font-size:13px;font-weight:500;display:grid;gap:4px}
 <script>new MutationObserver(()=>{for(const c of document.querySelectorAll('.stack td:not([data-l])')){let i=0,p=c;while(p=p.previousElementSibling)i+=p.colSpan;c.dataset.l=c.closest('table').rows[0].cells[i]?.textContent||''}}).observe(document,{childList:true,subtree:true})</script>
 </head>
 <body>
+<div id="boot" class="login card" hidden>
+  <h1 style="margin-bottom:6px">Call Coach</h1>
+  <p id="bootMsg" class="small" style="color:var(--bad)"></p>
+  <p class="small muted">Click below to sign in again. If it keeps happening, tell your admin.</p>
+  <button class="primary" id="bootReset">Sign in again</button>
+</div>
 <div id="loginView" class="login card" hidden>
   <h1 style="margin-bottom:6px">Call Coach</h1>
   <p class="muted small" style="margin:0 0 14px">Sign in with the account your manager created for you.</p>
@@ -186,16 +192,22 @@ $('loginForm').onsubmit=async e=>{e.preventDefault();$('loginMsg').textContent='
   const {error}=await sb.auth.signInWithPassword({email:$('email').value.trim(),password:$('password').value});
   if(error)$('loginMsg').textContent=error.message};
 $('logout').onclick=()=>sb.auth.signOut();
-sb.auth.onAuthStateChange((_e,session)=>start(session));
-sb.auth.getSession().then(({data})=>start(data.session));
+// Never await Supabase calls inside the auth callback (it can lock up); run start() on the next tick.
+sb.auth.onAuthStateChange((_e,session)=>setTimeout(()=>start(session),0));
+sb.auth.getSession().then(({data})=>start(data.session)).catch(()=>start(null));
+const bootTimer=setTimeout(()=>{if($('loginView').hidden&&$('appView').hidden)showBootError('The dashboard is taking too long to connect.')},12000);
+function showBootError(msg){$('boot').hidden=false;$('bootMsg').textContent=msg}
+$('bootReset').onclick=()=>{try{for(const k of Object.keys(localStorage))if(k.startsWith('sb-'))localStorage.removeItem(k)}catch{}location.reload()};
 
 let started=null;
 async function start(session){
   const key=session?.user?.id||'';
   if(key===started)return;started=key;
   clearInterval(timer);
-  if(!session){$('appView').hidden=true;$('loginView').hidden=false;return}
-  const {data}=await sb.from('team_members').select('*').ilike('email',session.user.email).maybeSingle();
+  if(!session){clearTimeout(bootTimer);$('boot').hidden=true;$('appView').hidden=true;$('loginView').hidden=false;return}
+  const {data,error}=await sb.from('team_members').select('*').ilike('email',session.user.email).maybeSingle();
+  if(error){started=null;showBootError('Could not reach the Call Coach database: '+error.message);return}
+  clearTimeout(bootTimer);$('boot').hidden=true;
   me=data;
   $('loginView').hidden=true;$('appView').hidden=false;
   if(!me){$('who').textContent=session.user.email;$('callsView').innerHTML='<div class="card empty">Your login works, but you have not been given access yet. Ask your manager to add '+esc(session.user.email)+' under Team access.</div>';return}
