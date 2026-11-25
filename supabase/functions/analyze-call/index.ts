@@ -2,11 +2,17 @@
 // The call is transcribed (if audio), scored, and saved to public.calls.
 // Agents can only add calls under their own agent name; managers can add for anyone.
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { encodeBase64 } from "jsr:@std/encoding@1/base64";
 
 const env = (k: string, d = "") => (Deno.env.get(k) ?? d).trim();
+// Provider order: Gemini (GEMINI_API_KEY), then OpenAI, then Groq.
+const USE_GEMINI = !!env("GEMINI_API_KEY");
+const GEMINI_MODELS = env("GEMINI_MODEL", "gemini-flash-latest,gemini-3.7-flash,gemini-3.6-flash,gemini-3.5-flash,gemini-2.5-flash").split(",").map((s) => s.trim());
+const GEMINI_BASE = "https://generativelanguage.googleapis.com";
 const USE_OPENAI = !!env("OPENAI_API_KEY");
 const AI_BASE = USE_OPENAI ? "https://api.openai.com/v1" : "https://api.groq.com/openai/v1";
 const AI_KEY = () => env("OPENAI_API_KEY") || env("GROQ_API_KEY");
+const ANY_KEY = () => env("GEMINI_API_KEY") || AI_KEY();
 const TRANSCRIBE_MODELS = env("TRANSCRIBE_MODEL", USE_OPENAI ? "gpt-4o-transcribe-diarize,gpt-transcribe,gpt-4o-transcribe" : "whisper-large-v3-turbo,whisper-large-v3").split(",").map((s) => s.trim());
 const ANALYSIS_MODELS = env("ANALYSIS_MODEL", USE_OPENAI ? "gpt-5.6-sol,gpt-4o" : "openai/gpt-oss-120b,llama-3.3-70b-versatile").split(",").map((s) => s.trim());
 
@@ -113,6 +119,73 @@ async function analyze(agent: string, transcript: string): Promise<{ result: any
   throw new Error(`Analysis failed — ${lastErr}`);
 }
 
+// ---------- Gemini: one call listens to the audio (or reads the transcript) and reviews it ----------
+async function geminiUpload(file: File): Promise<{ uri: string; mime: string }> {
+  const mime = file.type || "audio/mpeg";
+  const start = await fetch(`${GEMINI_BASE}/upload/v1beta/files`, {
+    method: "POST",
+    headers: {
+      "x-goog-api-key": env("GEMINI_API_KEY"), "X-Goog-Upload-Protocol": "resumable", "X-Goog-Upload-Command": "start",
+      "X-Goog-Upload-Header-Content-Length": String(file.size), "X-Goog-Upload-Header-Content-Type": mime, "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ file: { display_name: "call" } }),
+  });
+  const url = start.headers.get("x-goog-upload-url");
+  if (!start.ok || !url) throw new Error(`Gemini upload failed (${start.status})`);
+  const up = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Length": String(file.size), "X-Goog-Upload-Offset": "0", "X-Goog-Upload-Command": "upload, finalize" },
+    body: file,
+  });
+  const d = await up.json().catch(() => ({}));
+  let f = d.file;
+  if (!up.ok || !f?.uri) throw new Error(`Gemini upload failed (${up.status})`);
+  for (let i = 0; i < 20 && f.state === "PROCESSING"; i++) {
+    await new Promise((r) => setTimeout(r, 1500));
+    const g = await fetch(`${GEMINI_BASE}/v1beta/${f.name}`, { headers: { "x-goog-api-key": env("GEMINI_API_KEY") } });
+    f = await g.json().catch(() => f);
+  }
+  if (f.state === "FAILED") throw new Error("Gemini could not read this audio file");
+  return { uri: f.uri, mime: f.mimeType || mime };
+}
+
+async function geminiReview(agent: string, transcript: string, file: File | null): Promise<{ result: any; model: string; transcript: string }> {
+  const parts: unknown[] = [];
+  let prompt = coachPrompt(agent, file ? "(The call is attached as an audio recording.)" : transcript);
+  if (file) {
+    prompt += `\n\nThe call is attached as audio. Listen to all of it. Add a "transcript" field to the JSON with the full conversation, one turn per line, each line starting with "Agent:" or "Carrier:". Base the review on what was actually said.`;
+    if (file.size <= 14 * 1024 * 1024) parts.push({ inline_data: { mime_type: file.type || "audio/mpeg", data: encodeBase64(new Uint8Array(await file.arrayBuffer())) } });
+    else { const f = await geminiUpload(file); parts.push({ file_data: { mime_type: f.mime, file_uri: f.uri } }); }
+  }
+  parts.unshift({ text: prompt });
+  let lastErr = "";
+  for (const model of GEMINI_MODELS) {
+    const r = await fetch(`${GEMINI_BASE}/v1beta/models/${model}:generateContent`, {
+      method: "POST",
+      headers: { "x-goog-api-key": env("GEMINI_API_KEY"), "Content-Type": "application/json" },
+      body: JSON.stringify({ contents: [{ role: "user", parts }], generationConfig: { responseMimeType: "application/json", temperature: 0.2, maxOutputTokens: 16384 } }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok) {
+      const text = (d.candidates?.[0]?.content?.parts ?? []).map((p: { text?: string }) => p.text ?? "").join("");
+      try {
+        const res = JSON.parse(text.replace(/^```(json)?|```$/g, "").trim());
+        if (res && Array.isArray(res.stages)) {
+          const tx = file ? String(res.transcript ?? "").trim() : transcript;
+          delete res.transcript;
+          return { result: res, model, transcript: tx };
+        }
+        lastErr = `${model}: incomplete JSON`;
+      } catch { lastErr = `${model}: could not parse JSON`; }
+    } else {
+      lastErr = `${model}: ${r.status} ${d.error?.message ?? ""}`;
+      if (r.status === 400 && /API key/i.test(d.error?.message ?? "")) throw new Error("401 Gemini API key is not valid");
+      // 404 = model not available, 429 = that model's free quota used up: try the next model
+    }
+  }
+  throw new Error(`Review failed — ${lastErr}`);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "Use POST" }, 405);
@@ -124,7 +197,7 @@ Deno.serve(async (req) => {
   if (!email) return json({ error: "Please sign in again." }, 401);
   const { data: member } = await admin.from("team_members").select("*").ilike("email", email).maybeSingle();
   if (!member) return json({ error: "You do not have access to Call Coach yet. Ask your manager to add you." }, 403);
-  if (!AI_KEY()) return json({ error: "AI is not set up yet: add GROQ_API_KEY (free) or OPENAI_API_KEY in Supabase Edge Function secrets." }, 503);
+  if (!ANY_KEY()) return json({ error: "AI is not set up yet: add GEMINI_API_KEY (free) in Supabase Edge Function secrets." }, 503);
 
   let form: FormData;
   try { form = await req.formData(); } catch { return json({ error: "Could not read the upload." }, 400); }
@@ -139,24 +212,31 @@ Deno.serve(async (req) => {
   try {
     let tModel = "pasted";
     let audioPath: string | null = null;
-    if (file instanceof File && file.size > 0) {
-      if (file.size > 24 * 1024 * 1024) return json({ error: "Recording is larger than 24 MB. Upload a shorter call or an mp3." }, 413);
-      const tx = await transcribe(file);
-      transcript = tx.text; tModel = tx.model;
-      const ext = (file.name.split(".").pop() || "mp3").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 5) || "mp3";
+    const audio = file instanceof File && file.size > 0 ? file : null;
+    const hasFile = audio !== null;
+    if (audio && audio.size > 24 * 1024 * 1024) return json({ error: "Recording is larger than 24 MB. Upload a shorter call or an mp3." }, 413);
+    if (!hasFile && transcript.length < 80) return json({ error: "The call is too short to review. Paste a longer transcript or a longer recording." }, 400);
+    let an: { result: any; model: string };
+    if (USE_GEMINI) {
+      const g = await geminiReview(agent, transcript, audio);
+      an = g; transcript = g.transcript; if (hasFile) tModel = g.model;
+    } else {
+      if (audio) { const tx = await transcribe(audio); transcript = tx.text; tModel = tx.model; }
+      if (transcript.length < 80) return json({ error: "The call is too short to review. Paste a longer transcript or a longer recording." }, 400);
+      an = await analyze(agent, transcript);
+    }
+    if (audio) {
+      const ext = (audio.name.split(".").pop() || "mp3").toLowerCase().replace(/[^a-z0-9]/g, "").slice(0, 5) || "mp3";
       const path = `uploads/${crypto.randomUUID()}.${ext}`;
-      const up = await admin.storage.from("recordings").upload(path, file, { contentType: file.type || "audio/mpeg" });
+      const up = await admin.storage.from("recordings").upload(path, audio, { contentType: audio.type || "audio/mpeg" });
       if (!up.error) audioPath = path;
     }
-    if (transcript.length < 80) return json({ error: "The call is too short to review. Paste a longer transcript or a longer recording." }, 400);
-
-    const an = await analyze(agent, transcript);
     const r = an.result;
     const { data: row, error } = await admin.from("calls").insert({
       rc_call_id: `manual-${crypto.randomUUID()}`,
       started_at: new Date().toISOString(),
       duration_sec: durationSec,
-      direction: file instanceof File && file.size > 0 ? "Uploaded recording" : "Pasted transcript",
+      direction: hasFile ? "Uploaded recording" : "Pasted transcript",
       agent_name: agent,
       carrier_name: carrier || (r.carrierName ? String(r.carrierName).slice(0, 120) : null),
       status: "done",
@@ -170,7 +250,7 @@ Deno.serve(async (req) => {
     return json({ ok: true, id: row.id });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    const friendly = /429/.test(msg) ? "The free AI limit is reached for now. Try again in a few minutes." : /401/.test(msg) ? "The AI key in Supabase is not valid. Check GROQ_API_KEY." : msg;
+    const friendly = /429/.test(msg) ? "The free AI limit is reached for now. Try again in a few minutes." : /401/.test(msg) ? "The AI key in Supabase is not valid. Check GEMINI_API_KEY." : msg;
     return json({ error: friendly }, 500);
   }
 });

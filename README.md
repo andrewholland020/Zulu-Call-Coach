@@ -22,7 +22,7 @@ Every 5 minutes a Supabase Edge Function (`rc-sync`) pulls new recorded calls fr
    - `RC_CLIENT_ID`
    - `RC_CLIENT_SECRET`
    - `RC_JWT`
-   - `GROQ_API_KEY` (free) **or** `OPENAI_API_KEY` (if both are set, OpenAI is used)
+   - `GEMINI_API_KEY` (free, from aistudio.google.com) — or `GROQ_API_KEY` / `OPENAI_API_KEY`. Order used: Gemini, then OpenAI, then Groq.
 5. **Logins:** Supabase → Authentication → Users → Add user (Auto confirm on). Then add the person in the dashboard under Team access. Agents need their exact RingCentral name.
 6. Recommended: Supabase → Authentication → Sign In / Providers → turn off "Allow new users to sign up".
 
